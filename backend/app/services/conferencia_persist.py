@@ -17,22 +17,23 @@ from app.domain.conferente import ConfigObraConferente, conferir_nf_multiplos_it
 from app.services.mensagem_fiscal import gerar_mensagem_fiscal, resumo_global_texto_curto
 from app.services.nfe_persistencia import substituir_itens_nfe
 from app.services.whatsapp_evolution import notificar_mensagem_fiscal
+from app.tenant import resolver_tenant_de_obra
 
 logger = logging.getLogger(__name__)
 
 
 def carregar_obra_por_id(db: Session, obra_id: UUID) -> dict[str, Any]:
-    row = db.execute(
-        text("""
-            SELECT id, nome, cnpj_destinatario, aceita_similar, margem_tolerancia_float, modo_aprendizado,
-                   api_key, whatsapp_destino
-            FROM obras WHERE id = :id
-        """),
-        {"id": str(obra_id)},
-    ).mappings().first()
-    if row is None:
+    """
+    Carrega a obra e abre o contexto de tenant da sessão.
+
+    Passa por `auth_lookup_obra` (SECURITY DEFINER) porque, neste ponto, ainda
+    não existe tenant na transação — e sem tenant o RLS nega a leitura. É a
+    única porta que atravessa o isolamento, e ela só aceita um UUID.
+    """
+    obra = resolver_tenant_de_obra(db, obra_id)
+    if obra is None:
         raise HTTPException(status_code=404, detail="obra não encontrada")
-    return dict(row)
+    return obra
 
 
 def carregar_especificacoes_obra(db: Session, obra_id: UUID) -> list[dict[str, Any]]:

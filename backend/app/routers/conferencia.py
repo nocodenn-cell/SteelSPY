@@ -34,6 +34,7 @@ from app.services.laudo_storage import SUPABASE_URL as LAUDO_SUPABASE_URL, envia
 from app.services.mensagem_fiscal import gerar_mensagem_fiscal
 from app.services.nfe_io import buscar_xml_ou_json_por_chave
 from app.services.whatsapp_evolution import notificar_mensagem_fiscal, notificar_xml_pendente
+from app.tenant import resolver_tenant_de_nfe_log
 from app.utils.url_seguras import URLNaoPermitidaError, url_redirect_laudo_confiavel, validar_url_imagem_publica
 
 logger = logging.getLogger(__name__)
@@ -306,6 +307,11 @@ def get_laudo_pdf(
     Caso contrário gera o PDF, tenta enviar ao Storage e grava a URL; se o upload falhar,
     devolve o arquivo inline.
     """
+    # Abre o contexto de tenant antes de qualquer consulta: sem ele o RLS
+    # esconde `obras` e o JOIN abaixo voltaria vazio.
+    if resolver_tenant_de_nfe_log(db, nfe_log_id) is None:
+        raise HTTPException(status_code=404, detail="nfe_log não encontrado")
+
     row = db.execute(
         text("""
             SELECT n.id, n.obra_id, n.chave_acesso, n.status_conferencia, n.xml_data, n.override_info,
@@ -388,6 +394,10 @@ def get_divergencias_pdf(
     """
     PDF detalhado por linha (nfe_itens): divergências e mensagens do conferente.
     """
+    # Contexto de tenant antes da consulta (o RLS filtra `obras` no JOIN).
+    if resolver_tenant_de_nfe_log(db, nfe_log_id) is None:
+        raise HTTPException(status_code=404, detail="nfe_log não encontrado")
+
     row = db.execute(
         text("""
             SELECT n.id, n.obra_id, n.chave_acesso, n.status_conferencia,
@@ -459,6 +469,11 @@ def post_override(
     x_api_key: str | None = Header(None, alias="X-API-KEY"),
     pwa_session_cookie: str | None = Cookie(None, alias=SESSION_COOKIE_NAME),
 ) -> dict[str, Any]:
+    # Contexto de tenant antes do SELECT ... FOR UPDATE (o JOIN em `obras` é
+    # filtrado por RLS e precisaria devolver a linha).
+    if resolver_tenant_de_nfe_log(db, nfe_log_id) is None:
+        raise HTTPException(status_code=404, detail="nfe_log não encontrado")
+
     row = db.execute(
         text("""
             SELECT n.id, n.obra_id, n.status_conferencia, n.override_info, o.api_key
