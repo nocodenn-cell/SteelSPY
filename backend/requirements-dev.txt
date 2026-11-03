@@ -1,0 +1,15 @@
+# Dependencias de desenvolvimento e teste.
+#
+# Inclui as de producao (`-r requirements.txt`) para que um unico comando
+# prepare o ambiente completo.
+#
+# Instalacao reproduzivel:
+#   pip install -r requirements-dev.txt -c constraints.txt
+#
+# `httpx` nao aparece aqui de proposito: ja e dependencia direta de producao
+# (ver requirements.txt) e declarar de novo abriria a porta para duas faixas
+# divergentes.
+
+-r requirements.txt
+
+pytest>=9.2.0,<10.0

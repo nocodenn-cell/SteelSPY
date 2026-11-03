@@ -1,0 +1,107 @@
+# =============================================================================
+# stellSPY — .gitignore
+# Criado em 2026-11-03 (Bloco A). Objetivo: impedir que artefatos gerados,
+# ambientes virtuais, caches, logs e credenciais entrem no controle de versão.
+# =============================================================================
+
+# --- Python -------------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+.eggs/
+develop-eggs/
+sdist/
+wheels/
+*.egg
+
+# --- Ambientes virtuais -------------------------------------------------------
+.venv/
+venv/
+env/
+ENV/
+.python-version
+
+# --- Testes e cobertura -------------------------------------------------------
+.pytest_cache/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+.tox/
+.nox/
+.cache/
+
+# --- Ferramentas de análise ---------------------------------------------------
+.mypy_cache/
+.ruff_cache/
+.dmypy.json
+
+# --- Node / PWA ---------------------------------------------------------------
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.vite/
+.npm/
+
+# --- Segredos e configuração local -------------------------------------------
+# Arquivos .env de qualquer tipo entram no ignore; apenas o modelo é versionado.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+credentials.json
+secrets.json
+secrets.yaml
+secrets.yml
+
+# --- Artefatos de execução, temporários e logs --------------------------------
+*.log
+logs/
+tmp/
+temp/
+*.tmp
+*.bak
+*.orig
+
+# --- Armazenamento local de evidências (nunca versionado) ---------------------
+# Fotos de obra são dado de cliente: jamais entram no repositório.
+var/
+backend/var/
+evidencias/
+*.rej
+*.swp
+*~
+
+# --- Dados locais / de cliente ------------------------------------------------
+data/
+uploads/
+*.sqlite
+*.sqlite3
+*.db
+*dump*.sql
+*.csv
+!docs/**/*.csv
+
+# --- Sistema operacional ------------------------------------------------------
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# --- Editores / IDE -----------------------------------------------------------
+.idea/
+.vscode/
+*.sublime-project
+*.sublime-workspace
+
+# --- Raspagem local: servidores de dev, PDFs e fotos de teste ---------------
+.devtmp/
