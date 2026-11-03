@@ -342,22 +342,37 @@ def quantidade_recebida_em_metros(item_xml: dict[str, Any]) -> float:
     raise ValueError(f"Unidade não suportada: {unidade}")
 
 
-def analisar_divergencia(
+def _config_conferente(config_obra: ConfigObraConferente | dict[str, Any]) -> ConfigObraConferente:
+    if isinstance(config_obra, ConfigObraConferente):
+        return config_obra
+    d = dict(config_obra)
+    return ConfigObraConferente(
+        aceita_similar=bool(d.get("aceita_similar", False)),
+        margem_tolerancia_float=float(d.get("margem_tolerancia_float", 0.02)),
+        modo_aprendizado=bool(d.get("modo_aprendizado", True)),
+    )
+
+
+def analisar_divergencia_detalhada(
     item_xml: dict[str, Any],
     item_especificado: dict[str, Any],
     config_obra: ConfigObraConferente | dict[str, Any],
     *,
     bitola_ja_casada: bool = False,
-) -> tuple[StatusConferencia, list[str], str | None]:
-    if isinstance(config_obra, ConfigObraConferente):
-        cfg = config_obra
-    else:
-        d = dict(config_obra)
-        cfg = ConfigObraConferente(
-            aceita_similar=bool(d.get("aceita_similar", False)),
-            margem_tolerancia_float=float(d.get("margem_tolerancia_float", 0.02)),
-            modo_aprendizado=bool(d.get("modo_aprendizado", True)),
-        )
+) -> dict[str, Any]:
+    """
+    Analisa o item separando **severidade técnica** de **status operacional**.
+
+    - `status_tecnico`: o que a regra diz, sem nenhum amortecedor. É a verdade
+      técnica da divergência e nunca é alterada pelo modo de aprendizado.
+    - `status`: o que o sistema mostra hoje, que pode ser rebaixado pelo modo de
+      aprendizado (VERMELHO -> AMARELO) enquanto a obra está em implantação.
+
+    Antes, o rebaixamento apagava a severidade: uma divergência de 90% aparecia
+    só como "AMARELO / atenção". Com os dois campos, o modo de aprendizado deixa
+    de esconder o que o fiscal precisa saber — ele só deixa de bloquear.
+    """
+    cfg = _config_conferente(config_obra)
 
     bitola_esp = item_especificado.get("bitola_mm")
     bitola_xml = item_xml.get("bitola_mm")
@@ -407,19 +422,44 @@ def analisar_divergencia(
                 f"Planejado {q_esp:.2f} m, NF ~{q_rec:.2f} m."
             )
 
+    status_tecnico = status
     checkpoint: str | None = None
-    if status == StatusConferencia.VERMELHO and cfg.modo_aprendizado:
-        motivos_pre = list(motivos)
+
+    if status_tecnico == StatusConferencia.VERMELHO and cfg.modo_aprendizado:
+        checkpoint = _mensagem_checkpoint_aprendizado(list(motivos))
         status = StatusConferencia.AMARELO
-        checkpoint = _mensagem_checkpoint_aprendizado(motivos_pre)
         motivos.append(
-            "modo_aprendizado: status rebaixado de VERMELHO para AMARELO (entrada não bloqueada automaticamente)."
+            "modo_aprendizado: status operacional rebaixado de VERMELHO para AMARELO "
+            f"(severidade técnica mantida em {status_tecnico.value})."
         )
 
     if not motivos:
         motivos.append("Dentro dos parâmetros analisados.")
 
-    return status, motivos, checkpoint
+    return {
+        "status_tecnico": status_tecnico,
+        "status": status,
+        "motivos": motivos,
+        "checkpoint": checkpoint,
+    }
+
+
+def analisar_divergencia(
+    item_xml: dict[str, Any],
+    item_especificado: dict[str, Any],
+    config_obra: ConfigObraConferente | dict[str, Any],
+    *,
+    bitola_ja_casada: bool = False,
+) -> tuple[StatusConferencia, list[str], str | None]:
+    """
+    Assinatura histórica mantida: devolve (status operacional, motivos, checkpoint).
+
+    Quem precisa da severidade técnica usa `analisar_divergencia_detalhada`.
+    """
+    r = analisar_divergencia_detalhada(
+        item_xml, item_especificado, config_obra, bitola_ja_casada=bitola_ja_casada
+    )
+    return r["status"], r["motivos"], r["checkpoint"]
 
 
 def conferir_nf_multiplos_itens(
@@ -474,6 +514,8 @@ def conferir_nf_multiplos_itens(
         }
 
     agregado_status = StatusConferencia.VERDE
+    # Severidade técnica pura: nunca é rebaixada pelo modo de aprendizado.
+    agregado_tecnico = StatusConferencia.VERDE
     alerta_agregado = TipoAlerta.CONFORME
     detalhes: list[dict[str, str]] = []
     motivos_flat: list[str] = []
@@ -504,6 +546,7 @@ def conferir_nf_multiplos_itens(
 
         if esp is None:
             agregado_status = _pior(agregado_status, StatusConferencia.VERMELHO)
+            agregado_tecnico = _pior(agregado_tecnico, StatusConferencia.VERMELHO)
             alerta_agregado = _pior_alerta(alerta_agregado, TipoAlerta.MATERIAL_NAO_SOLICITADO)
             if categoria_nf == "cimento":
                 msg = "Material não solicitado para esta obra (cimento sem correspondência na especificação)."
@@ -532,6 +575,9 @@ def conferir_nf_multiplos_itens(
                     "quantidade_recebida": _safe_float_qtd(item_lo.get("quantidade")),
                     "unidade_recebida": str(item_lo.get("unidade_original") or item_lo.get("unidade") or ""),
                     "status_item": StatusConferencia.VERMELHO.value,
+                    # Material não solicitado é crítico por definição: não há
+                    # amortecedor de modo de aprendizado neste caminho.
+                    "severidade_tecnica": StatusConferencia.VERMELHO.value,
                     "divergencias": ["material_nao_especificado"],
                     "mensagem_item": msg,
                     "especificacao_id": None,
@@ -546,22 +592,29 @@ def conferir_nf_multiplos_itens(
         if cat_esp == "cimento":
             st_s, msg_c = classificar_item_cimento(esp, item_lo)
             st = _status_str_para_enum(st_s)
+            st_tecnico = st
             motivos_item = [msg_c]
             st, motivos_item, ckpt = _aplicar_modo_aprendizado_item(st, motivos_item, config)
         elif cat_esp == "bloco":
             st_s, msg_b = classificar_item_bloco(esp, item_lo)
             st = _status_str_para_enum(st_s)
+            st_tecnico = st
             motivos_item = [msg_b]
             st, motivos_item, ckpt = _aplicar_modo_aprendizado_item(st, motivos_item, config)
         else:
-            st, motivos_item, ckpt = analisar_divergencia(
+            detalhe = analisar_divergencia_detalhada(
                 item_lo,
                 esp,
                 config,
                 bitola_ja_casada=True,
             )
+            st_tecnico = detalhe["status_tecnico"]
+            st = detalhe["status"]
+            motivos_item = detalhe["motivos"]
+            ckpt = detalhe["checkpoint"]
 
         agregado_status = _pior(agregado_status, st)
+        agregado_tecnico = _pior(agregado_tecnico, st_tecnico)
         if ckpt:
             checkpoints.append(ckpt)
 
@@ -615,6 +668,7 @@ def conferir_nf_multiplos_itens(
                 "quantidade_recebida": _safe_float_qtd(item_lo.get("quantidade")),
                 "unidade_recebida": str(item_lo.get("unidade_original") or item_lo.get("unidade") or ""),
                 "status_item": st.value,
+                "severidade_tecnica": st_tecnico.value,
                 "divergencias": divs,
                 "mensagem_item": msg_item[:2000] if msg_item else "",
                 "especificacao_id": str(esp_id) if esp_id is not None else None,
@@ -640,12 +694,21 @@ def conferir_nf_multiplos_itens(
 
     return {
         "status": agregado_status.value,
+        # O que a auditoria técnica concluiu, independente de modo de aprendizado.
+        "severidade_tecnica": agregado_tecnico.value,
+        # Decisão que o sistema sugere hoje (pode estar rebaixada pelo aprendizado).
+        "decisao_operacional": agregado_status.value,
         "alerta": alerta_final,
         "detalhes": detalhes,
         "motivos": motivos_flat,
         "modo_aprendizado": config.modo_aprendizado,
+        "rebaixado_por_aprendizado": (
+            agregado_tecnico != agregado_status
+        ),
         "mensagem_modo_aprendizado": mensagem_aprendizado,
-        "can_override": agregado_status == StatusConferencia.VERMELHO,
+        # O aceite humano é sempre possível quando há divergência técnica, mesmo
+        # que o modo de aprendizado já tenha rebaixado o status operacional.
+        "can_override": agregado_tecnico == StatusConferencia.VERMELHO,
         "itens_processados": itens_processados,
         "resumo": resumo,
     }
