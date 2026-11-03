@@ -1,0 +1,12 @@
+{
+  "name": "stellspy-pwa",
+  "private": true,
+  "scripts": {
+    "build:css": "tailwindcss -i ./src/input.css -o ./assets/app.css --minify",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "tailwindcss": "^3.4.17",
+    "vitest": "^2.1.9"
+  }
+}

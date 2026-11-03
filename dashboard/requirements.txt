@@ -1,0 +1,8 @@
+# Instalação: pip install -r dashboard/requirements.txt
+# Execução (raiz do repo): set PYTHONPATH=backend && streamlit run dashboard/app.py
+
+streamlit>=1.40.0
+pandas>=2.2.0
+sqlalchemy>=2.0.0
+psycopg2-binary>=2.9.0
+plotly>=5.24.0
