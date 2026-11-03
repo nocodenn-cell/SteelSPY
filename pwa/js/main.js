@@ -1,355 +1,158 @@
+/**
+ * Casca do app: liga roteador, sessão e as doze telas.
+ *
+ * Nada de lógica de negócio aqui. Esta camada decide apenas qual tela montar,
+ * se a rota é compatível com o papel da pessoa na obra, e o que a barra de
+ * navegação mostra. Toda permissão que aparece aqui é conforto — a autoridade é
+ * o servidor, conferido em cada requisição.
+ */
+
 import { getApiBaseUrl } from "./config.js";
-import { pwaLogin, pwaLogout, conferirNfe, fetchLaudoBlob } from "./api.js";
-import { renderizarResultado, onlyDigits, mostrarToast } from "./render.js";
+import { boot, iniciar, irPara } from "./roteador.js";
+import { obraAtual, pode, usuario } from "./sessao.js";
+import { blocoErro, cartao, el, estadoVazio, titulo } from "./render.js";
+import {
+  telaConferir,
+  telaHistorico,
+  telaLogin,
+  telaObras,
+  telaPainel,
+} from "./telas_entrada.js";
+import {
+  telaDossie,
+  telaDossies,
+  telaNfe,
+  telaPedido,
+  telaPedidos,
+  telaDivergencias,
+} from "./telas_compra.js";
+import { telaFotos, telaRecebimento } from "./telas_recebimento.js";
 
-let lastLaudoUrl = null;
-let lastDivergenciasUrl = null;
-let loggedIn = false;
-
-/** RFC 4122 (hex com hífens) */
-function isValidUUID(uuid) {
-  const uuidRegex =
-    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-  return uuidRegex.test(String(uuid || "").trim());
-}
-
-function $(id) {
-  return document.getElementById(id);
-}
-
-function showEl(id, show) {
-  const el = $(id);
-  if (!el) return;
-  el.classList.toggle("hidden", !show);
-}
-
-function showFormError(msg) {
-  const el = $("formError");
-  if (!el) return;
-  el.textContent = msg;
-  el.classList.remove("hidden");
-}
-
-function clearFormError() {
-  const el = $("formError");
-  if (!el) return;
-  el.textContent = "";
-  el.classList.add("hidden");
-}
-
-function showLoginError(msg) {
-  const el = $("loginError");
-  if (!el) return;
-  el.textContent = msg;
-  el.classList.remove("hidden");
-}
-
-function clearLoginError() {
-  const el = $("loginError");
-  if (!el) return;
-  el.textContent = "";
-  el.classList.add("hidden");
-}
-
-function announce(msg) {
-  const el = $("liveRegion");
-  if (el) el.textContent = msg;
-}
-
-function apiBase() {
+function base() {
   return getApiBaseUrl().replace(/\/$/, "");
 }
 
-function useHeaderKeyMode() {
-  const c = $("useHeaderKey");
-  return !!(c && c.checked);
-}
+/**
+ * Rota → ação necessária na obra.
+ *
+ * Não é autorização: é para ninguém andar até uma tela que só devolveria 403 no
+ * portão, sem sinal. O servidor repete a mesma conferência em cada chamada.
+ */
+const ACAO_POR_ROTA = {
+  pedidos: "gerenciar_pedido",
+  pedido: "gerenciar_pedido",
+  divergencias: "ver_recebimento",
+  nfe: "ver_recebimento",
+  recebimento: "criar_recebimento",
+  fotos: "anexar_evidencia",
+  historico: "ver_recebimento",
+  dossies: "ver_recebimento",
+  dossie: "exportar_dossie",
+  conferir: "ver_recebimento",
+};
 
-function currentApiKey() {
-  const v = ($("apiKey") && $("apiKey").value) || "";
-  return String(v).trim();
-}
-
-function syncLoginUi() {
-  const base = apiBase();
-  const hasBase = !!base;
-  showEl("configWarning", !hasBase);
-  showEl("loginBlock", hasBase);
-  const badge = $("sessionBadge");
-  if (badge) {
-    badge.textContent = loggedIn ? "Sessão ativa (cookie)" : "Sem sessão";
-    badge.classList.toggle("bg-emerald-700", loggedIn);
-    badge.classList.toggle("bg-slate-600", !loggedIn);
-  }
-  const loginBtn = $("btnLogin");
-  if (loginBtn) loginBtn.disabled = !hasBase;
-  const hk = useHeaderKeyMode();
-  showEl("cookieActions", !hk);
-  if ($("apiKey")) $("apiKey").autocomplete = hk ? "off" : "current-password";
-}
-
-export async function handleLogin() {
-  clearLoginError();
-  const base = apiBase();
-  if (!base) {
-    showLoginError("Defina apiBaseUrl no bloco de configuração (#stellspy-config).");
-    return;
-  }
-  const obraId = (($("obraId") && $("obraId").value) || "").trim();
-  const key = currentApiKey();
-  if (!isValidUUID(obraId)) {
-    showLoginError(
-      "ID da obra inválido. Use o formato: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+function montar(rota, params) {
+  const b = base();
+  if (!b && rota !== "login") {
+    return cartao(
+      titulo("Falta configurar", "A app não sabe onde fica a API."),
+      el(
+        "p",
+        { class: "text-sm font-bold" },
+        "Preencha apiBaseUrl no bloco ",
+        el("code", { class: "font-mono" }, "#stellspy-config"),
+        " do index.html.",
+      ),
     );
-    return;
   }
-  if (!key) {
-    showLoginError("Informe a API Key da obra.");
-    return;
-  }
-  const btn = $("btnLogin");
-  if (btn) {
-    btn.disabled = true;
-    btn.textContent = "Entrando…";
-  }
-  try {
-    await pwaLogin(base, obraId, key);
-    loggedIn = true;
-    if ($("apiKey")) $("apiKey").value = "";
-    announce("Sessão iniciada.");
-  } catch (e) {
-    loggedIn = false;
-    showLoginError(e.message || "Falha no login.");
-    announce("Erro no login.");
-  } finally {
-    if (btn) {
-      btn.disabled = false;
-      btn.textContent = "Entrar na obra";
-    }
-    syncLoginUi();
-  }
-}
 
-export async function handleLogout() {
-  const base = apiBase();
-  if (base) {
-    try {
-      await pwaLogout(base);
-    } catch {
-      /* ignore */
-    }
-  }
-  loggedIn = false;
-  announce("Sessão encerrada.");
-  syncLoginUi();
-}
-
-export async function handleConferir() {
-  clearFormError();
-  const base = apiBase();
-  if (!base) {
-    showFormError("Configure apiBaseUrl em #stellspy-config.");
-    return;
-  }
-  const obraId = (($("obraId") && $("obraId").value) || "").trim();
-  const chave = onlyDigits(($("nfeKey") && $("nfeKey").value) || "");
-  if (!isValidUUID(obraId)) {
-    showFormError(
-      "ID da obra inválido. Use o formato: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+  const exigida = ACAO_POR_ROTA[rota];
+  if (exigida && !pode(exigida)) {
+    return cartao(
+      titulo("Sem permissão aqui", `Seu papel nesta obra não tem a ação "${exigida}".`),
+      estadoVazio(
+        "Volte ao painel",
+        "O painel mostra só o que você pode fazer nesta obra.",
+        el("button", {
+          type: "button",
+          class: "touch-btn mt-3 w-full bg-slate-900 text-white font-black rounded-xl border-4 border-black text-sm",
+          onclick: () => irPara("obra"),
+        }, "IR PARA O PAINEL"),
+      ),
     );
-    return;
-  }
-  if (chave.length !== 44) {
-    showFormError("A chave deve ter exatamente 44 dígitos.");
-    return;
-  }
-  const hk = useHeaderKeyMode();
-  const key = currentApiKey();
-  if (hk && !key) {
-    showFormError("Informe a API Key ou desmarque o modo header.");
-    return;
-  }
-  if (!hk && !loggedIn) {
-    showFormError("Entre na obra (login) ou marque o envio por X-API-KEY.");
-    return;
   }
 
-  const btn = $("btnCheck");
-  const resultArea = $("resultArea");
-  if (btn) {
-    btn.disabled = true;
-    btn.innerHTML =
-      '<span class="spinner" aria-hidden="true"></span><span>PROCESSANDO…</span>';
-  }
-  if (resultArea) resultArea.classList.add("hidden");
-
-  try {
-    const data = await conferirNfe(base, obraId, chave, hk ? { apiKey: key } : {});
-    const out = renderizarResultado(data, base);
-    lastLaudoUrl = out.lastLaudoUrl;
-    lastDivergenciasUrl = out.lastDivergenciasUrl;
-    announce(`Resultado: ${data.status}`);
-  } catch (err) {
-    showFormError(err.message || "Erro ao conectar. Verifique rede e URL da API.");
-    announce("Erro na conferência.");
-  } finally {
-    if (btn) {
-      btn.disabled = false;
-      btn.innerHTML = "CONFERIR MATERIAL";
-    }
+  switch (rota) {
+    case "login": return telaLogin(b);
+    case "obras": return telaObras(b);
+    case "painel": return telaPainel(b);
+    case "pedidos": return telaPedidos(b);
+    case "pedido": return telaPedido(b, params[0]);
+    case "nfe": return telaNfe(b);
+    case "recebimento": return telaRecebimento(b);
+    case "fotos": return telaFotos(b, params[0]);
+    case "divergencias": return telaDivergencias(b, params[0]);
+    case "historico": return telaHistorico(b);
+    case "dossies": return telaDossies(b);
+    case "dossie": return telaDossie(b, params[0]);
+    case "conferir": return telaConferir(b);
+    default:
+      return cartao(
+        el("h2", { class: "text-lg font-black uppercase mb-2" }, "Página não encontrada"),
+        blocoErro("O endereço digitado não corresponde a nenhuma tela.", () => irPara("obra")),
+      );
   }
 }
 
-async function handleAbrirDivergenciasPdf() {
-  const base = apiBase();
-  if (!base || !lastDivergenciasUrl) {
-    mostrarToast("Nenhum PDF de divergências disponível.", "info");
+/** Barra de navegação: só o que o papel permite, e nenhuma opção vira beco. */
+function atualizarNav(rota) {
+  const nav = document.getElementById("nav");
+  const quem = document.getElementById("qQuem");
+  const onde = document.getElementById("qOnde");
+  const u = usuario();
+  const obra = obraAtual();
+
+  quem.textContent = u ? u.nome : "";
+  onde.textContent = obra ? obra.nome : "";
+
+  if (!u || !obra || rota === "login" || rota === "obras") {
+    nav.classList.add("hidden");
     return;
   }
-  const hk = useHeaderKeyMode();
-  const key = currentApiKey();
-  if (hk && !key) {
-    mostrarToast("Informe a API Key para baixar o PDF.", "erro");
-    return;
-  }
-  const btn = document.getElementById("btnPdfDiv");
-  if (btn) {
-    btn.disabled = true;
-  }
-  try {
-    const headers = {};
-    if (hk && key) headers["X-API-KEY"] = key;
-    const response = await fetch(lastDivergenciasUrl, {
-      credentials: "include",
-      headers: Object.keys(headers).length ? headers : undefined,
-    });
-    if (!response.ok) {
-      const t = await response.text();
-      throw new Error(t.slice(0, 120) || `HTTP ${response.status}`);
-    }
-    const blob = await response.blob();
-    const url = URL.createObjectURL(blob);
-    window.open(url, "_blank", "noopener,noreferrer");
-    setTimeout(() => URL.revokeObjectURL(url), 60_000);
-  } catch (e) {
-    mostrarToast(
-      "Falha ao baixar PDF. " + (e.message || String(e)),
-      "erro",
-    );
-  } finally {
-    if (btn) btn.disabled = false;
+  nav.classList.remove("hidden");
+  for (const botao of nav.querySelectorAll(".nav-btn")) {
+    const destino = botao.dataset.rota;
+    const permitida = !ACAO_POR_ROTA[destino] || pode(ACAO_POR_ROTA[destino]);
+    botao.hidden = !permitida;
+    const ativo = destino === rota || (destino === "obra" && rota === "painel");
+    botao.className = `nav-btn ${ativo ? "nav-btn-ativa" : ""}`;
   }
 }
 
-async function handleAbrirLaudo() {
-  if (!lastLaudoUrl) return;
-  const base = apiBase();
-  const btn = $("btnPdf");
-  const hk = useHeaderKeyMode();
-  const key = currentApiKey();
-  if (btn) btn.disabled = true;
-  try {
-    const blob = await fetchLaudoBlob(lastLaudoUrl, hk ? { apiKey: key } : {});
-    const url = URL.createObjectURL(blob);
-    window.open(url, "_blank", "noopener,noreferrer");
-    setTimeout(() => URL.revokeObjectURL(url), 60_000);
-  } catch (e) {
-    mostrarToast(
-      "Não foi possível abrir o laudo. " + (e.message || String(e)),
-      "erro",
-    );
-  } finally {
-    if (btn) btn.disabled = false;
-  }
-}
-
-function wireNfeInput() {
-  const nfeInput = $("nfeKey");
-  if (!nfeInput) return;
-  nfeInput.addEventListener("input", () => {
-    const only = nfeInput.value.replace(/\D/g, "").slice(0, 44);
-    nfeInput.value = only.replace(/(.{4})/g, "$1 ").trim();
-    const dc = $("digitCount");
-    if (dc) dc.textContent = String(only.length);
+function tratarOffline() {
+  window.addEventListener("offline", () => {
+    const tela = document.getElementById("tela");
+    tela.prepend(el(
+      "div",
+      { class: "p-3 mb-4 bg-amber-100 border-4 border-amber-600 rounded-xl text-sm font-black", role: "alert" },
+      "Sem rede agora. Nada foi enviado — nada foi marcado como concluído.",
+    ));
   });
 }
 
-function wireHeaderKeyToggle() {
-  const c = $("useHeaderKey");
-  if (!c) return;
-  c.addEventListener("change", () => {
-    if (c.checked) {
-      loggedIn = false;
-    }
-    syncLoginUi();
-  });
-}
-
-window.stellspyLogin = handleLogin;
-window.stellspyLogout = handleLogout;
-window.stellspyConferir = handleConferir;
-window.stellspyLaudo = handleAbrirLaudo;
-window.stellspyDivergenciasPdf = handleAbrirDivergenciasPdf;
-
-wireNfeInput();
-wireHeaderKeyToggle();
-
-const preObra = (() => {
-  const el = document.getElementById("stellspy-config");
-  if (!el?.textContent?.trim()) return "";
-  try {
-    const j = JSON.parse(el.textContent);
-    return String(j.obraId || j.obra_id || "").trim();
-  } catch {
-    return "";
-  }
-})();
-
-if (preObra && $("obraId")) {
-  $("obraId").value = preObra;
-}
-
-syncLoginUi();
-
-/** Cookie de sessão: alinha UI com o servidor; em 401 limpa estado e avisa uma vez. */
-async function verificarSessao() {
-  const base = apiBase();
-  const hk = useHeaderKeyMode();
-  if (!base || hk) return true;
-
-  try {
-    const response = await fetch(`${base}/auth/pwa/session`, {
-      credentials: "include",
-    });
-
-    if (response.status === 401) {
-      if (loggedIn) {
-        mostrarToast("Sessão expirada. Faça login novamente.", "info");
-        announce("Sessão expirada.");
-      }
-      loggedIn = false;
-      syncLoginUi();
-      return false;
-    }
-
-    if (!response.ok) {
-      return loggedIn;
-    }
-
-    const data = await response.json();
-    loggedIn = !!data.ok;
-    syncLoginUi();
-    return loggedIn;
-  } catch {
-    return loggedIn;
+/** A barra de navegação é estática; os destinos vêm do `data-rota` de cada botão. */
+function ligarNav() {
+  for (const botao of document.querySelectorAll("#nav .nav-btn")) {
+    botao.addEventListener("click", () => irPara(botao.dataset.rota));
   }
 }
 
-void verificarSessao();
-
-setInterval(() => {
-  void verificarSessao();
-}, 5 * 60 * 1000);
+document.addEventListener("DOMContentLoaded", async () => {
+  iniciar(base, montar, atualizarNav);
+  tratarOffline();
+  ligarNav();
+  await boot(base);
+});
 
 if ("serviceWorker" in navigator && (location.protocol === "https:" || location.hostname === "localhost")) {
   navigator.serviceWorker.register("./sw.js").catch(() => {});
