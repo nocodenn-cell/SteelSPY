@@ -89,6 +89,38 @@ export function rotuloStatusLinha(status) {
   return STATUS_LINHA[status] || status || "—";
 }
 
+/**
+ * Ciclo de vida da entrega e do pedido.
+ *
+ * Vocabulário separado de `STATUS_LINHA` de propósito: aqui "pendente" é "ainda
+ * ninguém contou no portão", e na conciliação é "falta nota". Misturar os dois
+ * faria a mesma palavra significar duas coisas na mesma tela.
+ */
+const ESTADOS = {
+  pendente: { rotulo: "Sem contagem", cor: "PENDENTE" },
+  aberto: { rotulo: "Aberto", cor: "PENDENTE" },
+  parcial: { rotulo: "Entrega parcial", cor: "AMARELO" },
+  completo: { rotulo: "Completou o pedido", cor: "VERDE" },
+  atendido: { rotulo: "Atendido", cor: "VERDE" },
+  divergente: { rotulo: "Divergente", cor: "VERMELHO" },
+  encerrado: { rotulo: "Encerrado", cor: "VERDE" },
+  cancelado: { rotulo: "Cancelado", cor: "PENDENTE" },
+};
+
+export function rotuloEstado(estado) {
+  return (ESTADOS[estado] || { rotulo: estado || "—" }).rotulo;
+}
+
+export function badgeEstado(estado) {
+  const e = ESTADOS[estado] || { rotulo: estado || "sem estado", cor: "PENDENTE" };
+  const t = SEVERIDADES[e.cor];
+  return el(
+    "span",
+    { class: `inline-block px-3 py-1 rounded-lg font-black text-sm border-4 border-black ${t.cls}` },
+    String(e.rotulo).toUpperCase(),
+  );
+}
+
 export function cartao(...conteudo) {
   return el(
     "section",

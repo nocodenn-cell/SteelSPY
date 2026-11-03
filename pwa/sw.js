@@ -16,7 +16,7 @@ const SHELL = [
 ];
 
 self.addEventListener("install", (event) => {
-  event.waitUntil(caches.open("steelspy-v3").then((c) => c.addAll(SHELL)));
+  event.waitUntil(caches.open("steelspy-v4").then((c) => c.addAll(SHELL)));
   self.skipWaiting();
 });
 
@@ -24,7 +24,7 @@ self.addEventListener("activate", (event) => {
   event.waitUntil(
     caches
       .keys()
-      .then((chaves) => Promise.all(chaves.filter((k) => k !== "steelspy-v3").map((k) => caches.delete(k))))
+      .then((chaves) => Promise.all(chaves.filter((k) => k !== "steelspy-v4").map((k) => caches.delete(k))))
       .then(() => self.clients.claim()),
   );
 });

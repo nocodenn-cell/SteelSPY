@@ -20,6 +20,7 @@ from app.auth_usuario import SessaoAtual, abrir_contexto
 from app.db import get_db
 from app.deps import autorizar_na_obra, exigir_csrf, sessao_atual
 from app.services import pedidos as svc
+from app.services import recebimentos as svc_rec
 from app.services.dossie_pdf import gerar_dossie_pdf_bytes, nome_arquivo_dossie
 from app.tenant import consultar_obra
 
@@ -186,7 +187,10 @@ def get_pedidos(
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     sessao = sessao_atual(request, db)
-    _obra_autorizada(db, sessao, obra_id, "gerenciar_pedido")
+    # Ler o pedido não é gerenciar a compra. Quem está no portão precisa saber o
+    # que foi comprado para contar o que chegou; criar e alterar continua com
+    # engenharia/administração (`gerenciar_pedido`).
+    _obra_autorizada(db, sessao, obra_id, "ver_recebimento")
     return {"itens": svc.listar_pedidos(db, obra_id)}
 
 
@@ -197,7 +201,9 @@ def get_pedido(
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     sessao = sessao_atual(request, db)
-    _pedido_autorizado(db, sessao, pedido_id, "gerenciar_pedido")
+    # Mesmo critério da lista: a tela de recebimento mostra linhas e saldo a quem
+    # confere a carga no portão.
+    _pedido_autorizado(db, sessao, pedido_id, "ver_recebimento")
     try:
         return svc.obter_pedido(db, pedido_id)
     except svc.ErroPedido as exc:
@@ -344,6 +350,27 @@ def get_conciliacoes(
     sessao = sessao_atual(request, db)
     _pedido_autorizado(db, sessao, pedido_id, "ver_recebimento")
     return {"itens": svc.listar_conciliacoes(db, pedido_id)}
+
+
+@router.get("/pedidos/{pedido_id}/transicoes")
+def get_transicoes(
+    pedido_id: UUID,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """
+    Trilha de quem mudou o estado do pedido e de cada entrega.
+
+    É leitura: o auditor não decide, mas precisa ver a assinatura de quem
+    decidiu. `cobertura` vem junto porque a transição só faz sentido contra o
+    número que a produziu.
+    """
+    sessao = sessao_atual(request, db)
+    _pedido_autorizado(db, sessao, pedido_id, "ver_recebimento")
+    return {
+        "itens": svc_rec.listar_eventos(db, pedido_id),
+        "cobertura": svc_rec.cobertura_pedido(db, pedido_id)["linhas"],
+    }
 
 
 # ---------------------------------------------------------------------------

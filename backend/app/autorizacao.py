@@ -30,6 +30,7 @@ ACOES: Final = (
     "ver_evidencia",
     "ver_recebimento",
     "revisar_contagem",
+    "encerrar_recebimento",
     "override",
     "solicitar_retencao",
     "exportar_dossie",
@@ -65,6 +66,11 @@ MATRIZ: Final[dict[str, dict[str, bool]]] = {
     },
     "revisar_contagem": {
         "admin_tenant": True, "engenheiro": True, "fiscal": True, "auditor": False,
+    },
+    "encerrar_recebimento": {
+        # Encerrar é decisão, não conferência: quem conta no portão registra, quem
+        # responde pelo material fecha. O auditor vê a trilha, não assina.
+        "admin_tenant": True, "engenheiro": True, "fiscal": False, "auditor": False,
     },
     "override": {
         "admin_tenant": True, "engenheiro": True, "fiscal": False, "auditor": False,

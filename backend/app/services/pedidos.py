@@ -210,6 +210,8 @@ def obter_pedido(db: Session, pedido_id: UUID | str) -> dict[str, Any]:
         {"p": str(pedido_id)},
     ).mappings().all()
 
+    from app.services.recebimentos import cobertura_pedido
+
     return {
         "id": str(pedido["id"]),
         "obra_id": str(pedido["obra_id"]),
@@ -239,6 +241,10 @@ def obter_pedido(db: Session, pedido_id: UUID | str) -> dict[str, Any]:
             }
             for i in itens
         ],
+        # Quanto já entrou no portão por linha (recebido, saldo, estado). A tela
+        # de pedido usa isto para dizer "entrega parcial" com número, não com
+        # achismo. Import local: services.recebimentos usa ErroPedido deste módulo.
+        "cobertura": cobertura_pedido(db, pedido_id)["linhas"],
     }
 
 
@@ -825,8 +831,25 @@ def decidir_conciliacao(
         """),
         {"s": decisao, "d": json.dumps(corpo, default=str), "id": str(conciliacao_id)},
     )
+
+    # A decisão pode ser o que faltava para o pedido sair de `parcial`: enquanto
+    # há conciliação crítica sem dono, a quantidade fechada não quita nada.
+    from app.services.recebimentos import recomputar_pedido
+
+    pedido_status = recomputar_pedido(
+        db,
+        tenant_id=linha["tenant_id"],
+        pedido_id=linha["pedido_id"],
+        usuario_id=usuario_id,
+    )
+
     db.commit()
-    return {"id": str(conciliacao_id), "status": decisao, "decisao": corpo}
+    return {
+        "id": str(conciliacao_id),
+        "status": decisao,
+        "decisao": corpo,
+        "pedido_status": pedido_status,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -1107,15 +1130,15 @@ def montar_dossie(db: Session, *, pedido_id: UUID | str) -> dict[str, Any]:
 
     recebimentos = db.execute(
         text("""
-            SELECT r.id, r.tipo, r.status, r.observacoes, r.recebido_em,
+            SELECT r.id, r.tipo, r.status, r.observacoes, r.recebido_em, r.pedido_id,
                    count(e.id) AS total_evidencias
             FROM recebimentos r
             LEFT JOIN evidencias e ON e.recebimento_id = r.id AND e.removido_em IS NULL
-            WHERE r.obra_id = :o
+            WHERE r.obra_id = :o AND (r.pedido_id = :p OR r.pedido_id IS NULL)
             GROUP BY r.id
             ORDER BY r.recebido_em
         """),
-        {"o": pedido["obra_id"]},
+        {"o": pedido["obra_id"], "p": str(pedido_id)},
     ).mappings().all()
 
     notas = db.execute(
@@ -1152,10 +1175,11 @@ def montar_dossie(db: Session, *, pedido_id: UUID | str) -> dict[str, Any]:
                    e.largura, e.altura
             FROM evidencias e
             JOIN recebimentos r ON r.id = e.recebimento_id
-            WHERE r.obra_id = :o AND e.removido_em IS NULL
+            WHERE r.obra_id = :o AND (r.pedido_id = :p OR r.pedido_id IS NULL)
+              AND e.removido_em IS NULL
             ORDER BY e.recebida_em
         """),
-        {"o": pedido["obra_id"]},
+        {"o": pedido["obra_id"], "p": str(pedido_id)},
     ).mappings().all()
 
     conciliacoes = db.execute(
@@ -1165,6 +1189,13 @@ def montar_dossie(db: Session, *, pedido_id: UUID | str) -> dict[str, Any]:
         """),
         {"p": str(pedido_id)},
     ).mappings().all()
+
+    # O que entrou no portão linha a linha e quem mudou o estado de quê. O
+    # import é local porque `services.recebimentos` usa ErroPedido deste módulo.
+    from app.services.recebimentos import cobertura_pedido, listar_eventos
+
+    cobertura = cobertura_pedido(db, pedido_id)
+    transicoes = listar_eventos(db, pedido_id)
 
     return {
         # Identificador e horário de geração: quem recebe o dossiê precisa saber
@@ -1204,6 +1235,7 @@ def montar_dossie(db: Session, *, pedido_id: UUID | str) -> dict[str, Any]:
                 "id": str(r["id"]),
                 "tipo": r["tipo"],
                 "status": r["status"],
+                "pedido_id": str(r["pedido_id"]) if r["pedido_id"] else None,
                 "observacoes": r["observacoes"],
                 "recebido_em": r["recebido_em"].isoformat(),
                 "total_evidencias": r["total_evidencias"],
@@ -1256,6 +1288,10 @@ def montar_dossie(db: Session, *, pedido_id: UUID | str) -> dict[str, Any]:
         "total_nfe": len(notas),
         "total_evidencias": len(evidencias),
         "total_conciliacoes": len(conciliacoes),
+        # O físico contado no portão, linha por linha, e a trilha de transições.
+        # Sem isto o dossiê diria o que foi cobrado sem dizer o que entrou.
+        "cobertura": cobertura["linhas"],
+        "transicoes": transicoes,
         "ressalva": (
             "Documento gerado automaticamente a partir dos registros do sistema. "
             "Não constitui laudo técnico nem parecer jurídico."

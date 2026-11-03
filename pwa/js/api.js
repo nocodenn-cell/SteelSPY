@@ -211,6 +211,28 @@ export function abrirRecebimento(base, obraId, corpo, csrf) {
   return chamar(base, `/obras/${obraId}/recebimentos`, { method: "POST", corpo, csrf });
 }
 
+/** Estado de uma entrega: status, contagem por linha e a trilha de quem mudou quê. */
+export function obterRecebimento(base, recebimentoId, csrf) {
+  return chamar(base, `/recebimentos/${recebimentoId}`, { csrf });
+}
+
+/**
+ * Encerra a entrega. `motivo` é obrigatório: `encerrado` não é calculado em
+ * nenhum lugar do sistema, é decisão de gente e precisa de assinatura.
+ */
+export function encerrarRecebimento(base, recebimentoId, motivo, csrf) {
+  return chamar(base, `/recebimentos/${recebimentoId}/encerrar`, {
+    method: "POST",
+    corpo: { motivo },
+    csrf,
+  });
+}
+
+/** Trilha do pedido: transições de entrega e de pedido, com autor e motivo. */
+export function transicoes(base, pedidoId, csrf) {
+  return chamar(base, `/pedidos/${pedidoId}/transicoes`, { csrf });
+}
+
 export function listarRecebimentos(base, obraId, csrf, limite = 30) {
   return listar(base, `/obras/${obraId}/recebimentos`, { csrf, consulta: { limite } });
 }

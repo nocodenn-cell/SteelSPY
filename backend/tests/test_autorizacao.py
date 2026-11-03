@@ -53,6 +53,10 @@ ESPERADO: dict[tuple[str, str], bool] = {
     ("revisar_contagem", "engenheiro"): True,
     ("revisar_contagem", "fiscal"): True,
     ("revisar_contagem", "auditor"): False,
+    ("encerrar_recebimento", "admin_tenant"): True,
+    ("encerrar_recebimento", "engenheiro"): True,
+    ("encerrar_recebimento", "fiscal"): False,
+    ("encerrar_recebimento", "auditor"): False,
     ("override", "admin_tenant"): True,
     ("override", "engenheiro"): True,
     ("override", "fiscal"): False,
@@ -72,11 +76,11 @@ ESPERADO: dict[tuple[str, str], bool] = {
 }
 
 
-def test_matriz_tem_48_celulas() -> None:
-    """12 ações × 4 papéis. Se alguém adicionar ação sem papel, o teste avisa."""
-    assert len(ACOES) == 12
+def test_matriz_tem_52_celulas() -> None:
+    """13 ações × 4 papéis. Se alguém adicionar ação sem papel, o teste avisa."""
+    assert len(ACOES) == 13
     assert len(PAPEIS_GLOBAIS) == 4
-    assert len(ESPERADO) == 48
+    assert len(ESPERADO) == 52
     assert set(ACOES) == set(MATRIZ), "ACOES e MATRIZ precisam ter as mesmas ações"
     for acao in ACOES:
         for papel in PAPEIS_GLOBAIS:

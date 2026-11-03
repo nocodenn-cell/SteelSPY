@@ -9,6 +9,7 @@
 
 import { ErroApi, conferirNfe, listarRecebimentos } from "./api.js";
 import {
+  badgeEstado,
   badgeSeveridade,
   blocoErro,
   cartao,
@@ -255,8 +256,8 @@ function resumoHoje(itens) {
       "div",
       { class: "flex items-center justify-between gap-2 py-2 border-b-2 border-gray-200 last:border-0" },
       el("span", { class: "text-sm font-bold" }, formatoDataHora(r.recebido_em)),
-      el("span", { class: "text-xs font-black uppercase" }, `${r.total_evidencias} foto(s)`),
-      badgeSeveridade(r.status === "conferido" ? "VERDE" : "PENDENTE"),
+      el("span", { class: "text-xs font-bold text-gray-700" }, `${r.total_evidencias} foto(s)`),
+      badgeEstado(r.status),
     )),
   );
 }
@@ -331,12 +332,13 @@ export function telaHistorico(base) {
             "div",
             { class: "flex items-center justify-between gap-2 mb-2" },
             el("span", { class: "font-black text-base" }, formatoDataHora(r.recebido_em)),
-            badgeSeveridade(r.status === "conferido" ? "VERDE" : "PENDENTE"),
+            badgeEstado(r.status),
           ),
           el(
             "p",
             { class: "text-sm font-bold text-gray-700" },
-            `${r.tipo} · ${r.total_evidencias} foto(s)${r.criado_por_nome ? " · por " + r.criado_por_nome : ""}`,
+            `${r.tipo} · ${r.pedido_numero ? "pedido " + r.pedido_numero : "sem pedido"} · ` +
+              `${r.total_evidencias} foto(s)${r.criado_por_nome ? " · por " + r.criado_por_nome : ""}`,
           ),
           r.observacoes ? el("p", { class: "text-sm font-bold mt-1" }, r.observacoes) : null,
         ));
@@ -348,7 +350,10 @@ export function telaHistorico(base) {
   }
 
   setTimeout(carregar, 0);
-  return cartao(titulo("Histórico de recebimentos", "Toque em um para ver as fotos."), corpo);
+  return cartao(
+    titulo("Histórico de recebimentos", "Toque em um para ver as fotos e, se seu papel permitir, encerrar a entrega."),
+    corpo,
+  );
 }
 
 /**

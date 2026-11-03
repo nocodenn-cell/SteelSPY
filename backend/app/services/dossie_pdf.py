@@ -197,7 +197,7 @@ def gerar_dossie_pdf_bytes(dossie: dict[str, Any]) -> bytes:
     _secao(pdf, font, "4", "Recebimentos e evidências")
     recibos = dossie.get("recebimentos") or []
     if not recibos:
-        _texto(pdf, 5, "Nenhum recebimento registrado nesta obra.")
+        _texto(pdf, 5, "Nenhum recebimento registrado para este pedido.")
     for r in recibos:
         _texto(
             pdf,
@@ -205,6 +205,35 @@ def gerar_dossie_pdf_bytes(dossie: dict[str, Any]) -> bytes:
             f"{_fmt_data(r.get('recebido_em'))} · {r.get('tipo')} · {r.get('status')} · "
             f"{r.get('total_evidencias')} foto(s)",
         )
+
+    # O que a tela do portão vê como "entrega parcial" precisa sair no papel
+    # como número: previsto, contado, saldo e o estado de cada linha.
+    for l in dossie.get("cobertura") or []:
+        _texto(
+            pdf,
+            4,
+            f"  linha {l.get('linha')} · {str(l.get('material_tipo') or '')[:40]} · "
+            f"entrou {_fmt_numero(l.get('recebido'))} de {_fmt_numero(l.get('quantidade'))} "
+            f"{l.get('unidade') or ''} · saldo {_fmt_numero(l.get('saldo'))} · "
+            f"{l.get('status_recebimento')}",
+        )
+
+    transicoes = dossie.get("transicoes") or []
+    if transicoes:
+        pdf.set_font(font, "B", 8)
+        pdf.set_x(pdf.l_margin)
+        pdf.cell(0, 6, "Trilha de transições (quem mudou o quê, e por quê):", ln=1)
+        pdf.set_font(font, "", 8)
+        for t in transicoes[:60]:
+            _texto(
+                pdf,
+                4,
+                f"  {_fmt_data(t.get('criado_em'))} · {t.get('origem')} · "
+                f"{t.get('status_de') or '—'} → {t.get('status_para')} · "
+                f"{t.get('autor_email') or 'sistema, sem decisão humana'}",
+            )
+            if t.get("motivo"):
+                _texto(pdf, 4, f"     {t['motivo']}")
     evidencias = dossie.get("evidencias") or []
     if evidencias:
         pdf.set_font(font, "B", 8)

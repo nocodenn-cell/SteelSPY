@@ -28,7 +28,9 @@ from app.auth_usuario import SessaoAtual, abrir_contexto
 from app.db import get_db
 from app.deps import autorizar_na_obra, exigir_csrf, sessao_atual
 from app.services import evidencias as svc
+from app.services import recebimentos as svc_recebimentos
 from app.services.armazenamento import ErroArmazenamento, backend
+from app.services.pedidos import ErroPedido
 from app.tenant import consultar_obra
 
 router = APIRouter(tags=["evidencias"])
@@ -37,10 +39,32 @@ ORIGENS = ("camera", "galeria", "upload", "integracao")
 TIPOS = ("material", "etiqueta", "nfe", "lacre", "documento")
 
 
+class ItemRecebimento(BaseModel):
+    """Contagem física de uma linha do pedido, na unidade da linha."""
+
+    pedido_item_id: UUID
+    quantidade: float = Field(gt=0)
+    unidade: str | None = Field(None, max_length=16)
+    observacao: str | None = Field(None, max_length=2000)
+
+
 class RecebimentoBody(BaseModel):
     tipo: Literal["entrada", "devolucao", "ajuste"] = "entrada"
     id_cliente: UUID | None = Field(None, description="Identificador gerado no dispositivo (offline)")
     observacoes: str | None = Field(None, max_length=2000)
+    pedido_id: UUID | None = Field(
+        None,
+        description="Pedido que esta entrega atende. Com ele a contagem por linha "
+        "define o estado da entrega (parcial, completo, divergente).",
+    )
+    itens: list[ItemRecebimento] = Field(
+        default_factory=list, max_length=200,
+        description="Quanto chegou de cada linha. Vazio = só o carimbo do portão.",
+    )
+
+
+class EncerrarRecebimentoBody(BaseModel):
+    motivo: str = Field(min_length=5, max_length=2000)
 
 
 def _obra_autorizada(
@@ -88,29 +112,98 @@ def post_recebimento(
         if existente is not None:
             return _serializar_recebimento(existente, criado=False)
 
-    linha = db.execute(
-        text("""
-            INSERT INTO recebimentos (tenant_id, obra_id, tipo, id_cliente, observacoes, criado_por)
-            VALUES (:t, :o, :tipo, :cliente, :obs, :autor)
-            RETURNING *
-        """),
-        {
-            "t": str(sessao.tenant_id),
-            "o": str(obra_id),
-            "tipo": body.tipo,
-            "cliente": str(body.id_cliente) if body.id_cliente else None,
-            "obs": body.observacoes,
-            "autor": str(sessao.usuario_id),
-        },
-    ).mappings().one()
-    db.commit()
-    return _serializar_recebimento(linha, criado=True)
+    try:
+        resultado = svc_recebimentos.registrar_recebimento(
+            db,
+            tenant_id=sessao.tenant_id,
+            obra_id=obra_id,
+            usuario_id=sessao.usuario_id,
+            tipo=body.tipo,
+            id_cliente=body.id_cliente,
+            observacoes=body.observacoes,
+            pedido_id=body.pedido_id,
+            itens=[i.model_dump() for i in body.itens],
+        )
+    except ErroPedido as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+    resultado["criado"] = True
+    return resultado
+
+
+@router.post("/recebimentos/{recebimento_id}/encerrar")
+def post_encerrar_recebimento(
+    recebimento_id: UUID,
+    body: EncerrarRecebimentoBody,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """
+    Encerra uma entrega por decisão humana autorizada.
+
+    O estado `encerrado` não é calculado em lugar nenhum do sistema: chegar nele
+    exige a ação `encerrar_recebimento` e um motivo, e fica na trilha com quem
+    decidiu. Encerrar a entrega não encerra o pedido.
+    """
+    sessao = sessao_atual(request, db)
+    exigir_csrf(request, sessao)
+
+    # Contexto antes da leitura: sem `app.tenant_id` o RLS não mostra nada, e o
+    # dono receberia 404 do próprio recebimento.
+    abrir_contexto(db, sessao)
+    dono = db.execute(
+        text("SELECT obra_id FROM recebimentos WHERE id = :id"), {"id": str(recebimento_id)}
+    ).mappings().first()
+    if dono is None:
+        # 404: confirmar que o id existe em outra construtora já seria informação.
+        raise HTTPException(status_code=404, detail="recebimento não encontrado")
+    autorizar_na_obra(db, sessao, dono["obra_id"], "encerrar_recebimento")
+
+    try:
+        return svc_recebimentos.encerrar_recebimento(
+            db,
+            recebimento_id=recebimento_id,
+            usuario_id=sessao.usuario_id,
+            motivo=body.motivo,
+        )
+    except ErroPedido as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+
+
+@router.get("/recebimentos/{recebimento_id}")
+def get_recebimento(
+    recebimento_id: UUID,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """
+    Uma entrega, com o estado, a contagem por linha e a trilha de quem mudou quê.
+
+    A tela de fotos precisa dele para mostrar `parcial`/`completo`/`encerrado` sem
+    recarregar o histórico inteiro da obra, e para saber se ainda faz sentido
+    oferecer o botão de encerrar.
+    """
+    sessao = sessao_atual(request, db)
+    # Contexto antes da leitura, pelo mesmo motivo do encerrar: sem tenant, o RLS
+    # não mostra a linha e o dono recebe 404 do próprio recebimento.
+    abrir_contexto(db, sessao)
+    dono = db.execute(
+        text("SELECT obra_id FROM recebimentos WHERE id = :id"), {"id": str(recebimento_id)}
+    ).mappings().first()
+    if dono is None:
+        raise HTTPException(status_code=404, detail="recebimento não encontrado")
+    _obra_autorizada(db, sessao, dono["obra_id"], "ver_recebimento")
+
+    detalhe = svc_recebimentos.detalhe_recebimento(db, recebimento_id)
+    if detalhe is None:
+        raise HTTPException(status_code=404, detail="recebimento não encontrado")
+    return detalhe
 
 
 def _serializar_recebimento(linha: Any, *, criado: bool) -> dict[str, Any]:
     return {
         "id": str(linha["id"]),
         "obra_id": str(linha["obra_id"]),
+        "pedido_id": str(linha["pedido_id"]) if linha["pedido_id"] else None,
         "tipo": linha["tipo"],
         "status": linha["status"],
         "id_cliente": str(linha["id_cliente"]) if linha["id_cliente"] else None,
@@ -217,13 +310,15 @@ def get_recebimentos(
     linhas = db.execute(
         text("""
             SELECT r.id, r.tipo, r.status, r.observacoes, r.recebido_em, r.criado_por,
+                   r.pedido_id, p.numero AS pedido_numero,
                    u.nome AS criado_por_nome,
                    count(e.id) AS total_evidencias
             FROM recebimentos r
+            LEFT JOIN pedidos_compra p ON p.id = r.pedido_id
             LEFT JOIN evidencias e ON e.recebimento_id = r.id AND e.removido_em IS NULL
             LEFT JOIN usuarios u ON u.id = r.criado_por
             WHERE r.obra_id = :o
-            GROUP BY r.id, u.nome
+            GROUP BY r.id, p.numero, u.nome
             ORDER BY r.recebido_em DESC
             LIMIT :lim
         """),
@@ -236,6 +331,8 @@ def get_recebimentos(
                 "id": str(r["id"]),
                 "tipo": r["tipo"],
                 "status": r["status"],
+                "pedido_id": str(r["pedido_id"]) if r["pedido_id"] else None,
+                "pedido_numero": r["pedido_numero"],
                 "observacoes": r["observacoes"],
                 "recebido_em": r["recebido_em"].isoformat(),
                 "criado_por_nome": r["criado_por_nome"],

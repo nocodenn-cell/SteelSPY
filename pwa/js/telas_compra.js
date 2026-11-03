@@ -20,9 +20,11 @@ import {
   listarPedidos,
   obterPedido,
   correlacionar,
+  transicoes,
   vincularNfe,
 } from "./api.js";
 import {
+  badgeEstado,
   badgeSeveridade,
   blocoErro,
   cartao,
@@ -34,6 +36,7 @@ import {
   formatoNumero,
   mostrarToast,
   protegerEnvio,
+  rotuloEstado,
   rotuloStatusLinha,
   titulo,
 } from "./render.js";
@@ -81,7 +84,7 @@ export function telaPedidos(base) {
           "div",
           { class: "flex items-center justify-between gap-2 mb-1" },
           el("span", { class: "font-black text-lg" }, `Pedido ${p.numero}`),
-          badgeSeveridade(_severidadeDoStatus(p.status)),
+          badgeEstado(p.status),
         ),
         el(
           "p",
@@ -114,12 +117,8 @@ export function telaPedidos(base) {
   );
 }
 
-function _severidadeDoStatus(status) {
-  return { completo: "VERDE", parcial: "AMARELO", divergente: "VERMELHO", encerrado: "VERDE" }[status] || "PENDENTE";
-}
-
 // ---------------------------------------------------------------------------
-// Pedido: detalhe, vínculo de NF-e e correlação
+// Pedido: detalhe, vínculo de NF-e, correlação e trilha de entregas
 // ---------------------------------------------------------------------------
 
 export function telaPedido(base, pedidoId) {
@@ -130,18 +129,20 @@ export function telaPedido(base, pedidoId) {
     corpo.textContent = "";
     corpo.append(carregando());
     try {
-      const [pedido, notas, correlacoes, conciliacoes] = await tentar(base, () =>
+      const [pedido, notas, correlacoes, conciliacoes, trilha] = await tentar(base, () =>
         Promise.all([
           obterPedido(base, pedidoId),
           listarNfeDoPedido(base, pedidoId),
           listarCorrelacoes(base, pedidoId),
           listarConciliacoes(base, pedidoId),
+          pode("ver_recebimento") ? transicoes(base, pedidoId) : Promise.resolve(null),
         ]),
       );
       corpo.textContent = "";
       corpo.append(
         _cartaoPedido(pedido),
         _cartaoLinhas(pedido),
+        trilha ? _cartaoTransicoes(pedido, trilha) : null,
         _cartaoNotas(base, obra, pedido, notas, carregar),
         _cartaoCorrelacoes(base, correlacoes, pedido, carregar),
         _cartaoAcoes(base, pedido, conciliacoes, carregar),
@@ -156,9 +157,55 @@ export function telaPedido(base, pedidoId) {
   return el("div", {}, corpo);
 }
 
+/**
+ * Quem mudou o estado de quê, quando e por quê.
+ *
+ * É a resposta para a pergunta que a auditoria sempre faz: "este pedido estava
+ * parcial em março porque alguém decidiu, ou porque ninguém contou?" A trilha
+ * diz. Entrega e pedido aparecem juntos porque a decisão sobre um move o outro.
+ */
+function _cartaoTransicoes(pedido, trilha) {
+  const eventos = trilha.itens || [];
+  const corpo = el("div", {});
+
+  if (!eventos.length) {
+    corpo.append(el(
+      "p",
+      { class: "text-sm font-bold text-gray-700" },
+      "Nenhuma transição registrada: este pedido ainda não teve entrega contada nem estado mudado.",
+    ));
+  }
+  for (const e of eventos) {
+    corpo.append(el(
+      "div",
+      { class: "py-3 border-b-4 border-gray-200 last:border-0" },
+      el(
+        "div",
+        { class: "flex items-center justify-between gap-2" },
+        el("span", { class: "text-sm font-black uppercase" },
+          `${e.origem} · ${rotuloEstado(e.status_de)} → ${rotuloEstado(e.status_para)}`),
+        el("span", { class: "text-xs font-bold text-gray-700 whitespace-nowrap" }, formatoDataHora(e.criado_em)),
+      ),
+      el("p", { class: "text-xs font-bold text-gray-800 mt-1" }, e.motivo || "sem motivo registrado"),
+      el("p", { class: "text-xs font-bold text-gray-600" }, e.autor_email || "sistema, sem decisão humana"),
+    ));
+  }
+
+  return cartao(
+    el("h3", { class: "text-base font-black uppercase mb-1" }, "Trilha de entregas"),
+    el(
+      "p",
+      { class: "text-xs font-bold text-gray-700 mb-3" },
+      `Estado atual do pedido: ${rotuloEstado(pedido.status)}. Toda mudança abaixo tem autor e motivo.`,
+    ),
+    corpo,
+  );
+}
+
 function _cartaoPedido(pedido) {
   return cartao(
-    titulo(`Pedido ${pedido.numero}`, `Status: ${rotuloStatusLinha(pedido.status) || pedido.status}`),
+    titulo(`Pedido ${pedido.numero}`, `Status: ${rotuloEstado(pedido.status)}`),
+    el("p", { class: "flex items-center gap-2 mb-2" }, badgeEstado(pedido.status)),
     campo("Emitido em", pedido.emitido_em ? formatoDataHora(pedido.emitido_em) : null),
     campo("Previsão de entrega", pedido.previsao_entrega ? formatoDataHora(pedido.previsao_entrega) : null),
     campo("Valor total", formatoNumero(pedido.valor_total, { unidade: "R$" })),
@@ -167,30 +214,55 @@ function _cartaoPedido(pedido) {
 }
 
 function _cartaoLinhas(pedido) {
-  const linhas = pedido.itens.map((i) => el(
-    "div",
-    { class: "py-3 border-b-4 border-gray-200 last:border-0" },
-    el(
+  // A cobertura vem do servidor: quanto já entrou de cada linha. Sem ela a tela
+  // diria "1000 m comprados" e omitiria os 400 m que já estão no canteiro.
+  const porId = new Map((pedido.cobertura || []).map((c) => [c.id, c]));
+  const algumaContagem = pedido.itens.some((i) => porId.get(i.id) && porId.get(i.id).recebido > 0);
+
+  const linhas = pedido.itens.map((i) => {
+    const c = porId.get(i.id);
+    const especificacao = [
+      i.bitola_mm ? `Ø ${formatoNumero(i.bitola_mm, { casas: 1 })} mm` : null,
+      i.marca_exigida ? `marca ${i.marca_exigida}` : null,
+      i.codigo_produto_fornecedor ? `código ${i.codigo_produto_fornecedor}` : "sem código do fornecedor",
+    ]
+      .filter(Boolean)
+      .join(" · ");
+
+    return el(
       "div",
-      { class: "flex items-start justify-between gap-2" },
-      el("span", { class: "font-black text-base" }, `L${i.linha} · ${i.material_tipo}`),
-      el("span", { class: "text-sm font-black whitespace-nowrap" }, `${formatoNumero(i.quantidade)} ${i.unidade}`),
-    ),
-    el(
-      "p",
-      { class: "text-xs font-bold text-gray-700 mt-1" },
-      [
-        i.bitola_mm ? `Ø ${formatoNumero(i.bitola_mm, { casas: 1 })} mm` : null,
-        i.marca_exigida ? `marca ${i.marca_exigida}` : null,
-        i.codigo_produto_fornecedor ? `código ${i.codigo_produto_fornecedor}` : "sem código do fornecedor",
-      ]
-        .filter(Boolean)
-        .join(" · "),
-    ),
-  ));
+      { class: "py-3 border-b-4 border-gray-200 last:border-0" },
+      el(
+        "div",
+        { class: "flex items-start justify-between gap-2" },
+        el("span", { class: "font-black text-base" }, `L${i.linha} · ${i.material_tipo}`),
+        el("span", { class: "text-sm font-black whitespace-nowrap" }, `${formatoNumero(i.quantidade)} ${i.unidade}`),
+      ),
+      el("p", { class: "text-xs font-bold text-gray-700 mt-1" }, especificacao),
+      c
+        ? el(
+            "div",
+            { class: "flex items-center justify-between gap-2 mt-2" },
+            el(
+              "span",
+              { class: "text-xs font-black" },
+              `entrou ${formatoNumero(c.recebido)} · faltam ${formatoNumero(c.saldo)} ${c.unidade || ""}`.trim(),
+            ),
+            badgeEstado(c.status_recebimento),
+          )
+        : null,
+    );
+  });
 
   return cartao(
     el("h3", { class: "text-base font-black uppercase mb-2" }, `Linhas do pedido (${pedido.itens.length})`),
+    algumaContagem
+      ? null
+      : el(
+          "p",
+          { class: "text-xs font-bold text-gray-700 mb-2" },
+          "Nenhuma entrega contada contra este pedido ainda.",
+        ),
     ...linhas,
   );
 }
@@ -831,8 +903,15 @@ function _formularioDecisao(base, c, aoMudar) {
       }
       protegerEnvio(b, async () => {
         try {
-          await tentar(base, () => decidirConciliacao(base, c.id, decisao, justificativa.value.trim(), csrf()));
-          mostrarToast(`Decisão registrada: ${decisao}.`, "sucesso");
+          const dados = await tentar(base, () =>
+            decidirConciliacao(base, c.id, decisao, justificativa.value.trim(), csrf()),
+          );
+          // Diz o que a decisão fez com o pedido: sem isso, quem decide veria só
+          // "registrado" e não saberia que o compromisso passou a atendido.
+          const depois = dados.pedido_status
+            ? ` Pedido agora: ${rotuloEstado(dados.pedido_status.status)}.`
+            : "";
+          mostrarToast(`Decisão registrada: ${decisao}.${depois}`, "sucesso");
           aoMudar();
         } catch (e) {
           avisos.textContent = "";
@@ -904,7 +983,7 @@ export function telaDossie(base, pedidoId) {
       corpo.textContent = "";
       corpo.append(
         cartao(
-          titulo(`Dossiê — pedido ${d.pedido.numero}`, `Status do pedido: ${d.pedido.status}`),
+          titulo(`Dossiê — pedido ${d.pedido.numero}`, `Status do pedido: ${rotuloEstado(d.pedido.status)}`),
           campo("Identificador", d.id),
           campo("Gerado em", d.gerado_em ? formatoDataHora(d.gerado_em) : null),
           campo("Notas", String(d.total_nfe ?? (d.nfe || []).length)),
@@ -917,6 +996,8 @@ export function telaDossie(base, pedidoId) {
             `…${String(n.chave_acesso).slice(-8)} · ${n.status_conferencia || "sem status"}`)),
         "Nenhuma nota vinculada."),
         _blocoEvidencias(d.evidencias || []),
+        _blocoEntregas(d),
+        _blocoTrilha(d.transicoes || []),
         _blocoLista("Conciliações", (d.conciliacoes || []).map((cc) =>
           el("p", { class: "text-sm font-bold py-2 border-b-2 border-gray-200 last:border-0" },
             `${formatoDataHora(cc.criado_em)} · ${cc.severidade_tecnica} · ${cc.status}`)),
@@ -970,6 +1051,54 @@ export function telaDossie(base, pedidoId) {
 
   setTimeout(carregar, 0);
   return el("div", {}, corpo);
+}
+
+/**
+ * O que entrou no portão, entrega por entrega, e o saldo que ficou.
+ *
+ * É a parte do dossiê que a NF-e não conta: a nota diz o que foi cobrado, a
+ * contagem diz o que chegou. Um pedido `parcial` com todas as notas pagas é
+ * exatamente o caso que esta tela precisa deixar evidente.
+ */
+function _blocoEntregas(d) {
+  const entregas = d.recebimentos || [];
+  const cobertura = d.cobertura || [];
+
+  const linhas = cobertura.map((c) => el(
+    "div",
+    { class: "flex items-center justify-between gap-2 py-2 border-b-2 border-gray-200 last:border-0" },
+    el("span", { class: "text-sm font-bold" },
+      `L${c.linha} · ${String(c.material_tipo || "").slice(0, 24)} · ${formatoNumero(c.recebido)} de ${formatoNumero(c.quantidade)} ${c.unidade || ""}`),
+    badgeEstado(c.status_recebimento),
+  ));
+
+  return cartao(
+    el("h3", { class: "text-base font-black uppercase mb-2" }, "Recebimentos e saldo por linha"),
+    entregas.length
+      ? el(
+          "ul",
+          { class: "text-sm font-bold mb-3 list-disc pl-5" },
+          ...entregas.map((r) => el("li", { class: "py-1" },
+            `${formatoDataHora(r.recebido_em)} · ${r.tipo} · ${rotuloEstado(r.status)} · ${r.total_evidencias} foto(s)`)),
+        )
+      : el("p", { class: "text-sm font-bold text-gray-700 mb-3" }, "Nenhum recebimento registrado para este pedido."),
+    linhas.length
+      ? el("div", {}, ...linhas)
+      : el("p", { class: "text-sm font-bold text-gray-700" }, "Pedido sem linhas cadastradas."),
+  );
+}
+
+function _blocoTrilha(transicoes) {
+  return _blocoLista(
+    "Trilha de decisões",
+    transicoes.map((t) => el(
+      "p",
+      { class: "text-xs font-bold py-2 border-b-2 border-gray-200 last:border-0" },
+      `${formatoDataHora(t.criado_em)} · ${t.origem} · ${rotuloEstado(t.status_de)} → ${rotuloEstado(t.status_para)} · ` +
+        `${t.autor_email || "sistema"}${t.motivo ? ": " + t.motivo : ""}`,
+    )),
+    "Nenhuma transição: o pedido nunca mudou de estado.",
+  );
 }
 
 function _blocoLista(titulo_, itens, vazio) {
