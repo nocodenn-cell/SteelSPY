@@ -46,8 +46,18 @@ def normalizar_url(url: str) -> str:
     )
 
 
-def conectar(url: str):
-    return psycopg2.connect(normalizar_url(url))
+def conectar(url: str, app_password: str | None = None):
+    """
+    Abre a conexão e, se houver senha de aplicação, publica a configuração que
+    a migração M23 lê (`stellspy.app_password`). Assim a senha nunca vive no
+    repositório: ela vem do ambiente do executor.
+    """
+    conn = psycopg2.connect(normalizar_url(url))
+    if app_password:
+        with conn.cursor() as cur:
+            # false = escopo de sessão: vale para todas as migrações desta execução.
+            cur.execute("SELECT set_config('stellspy.app_password', %s, false)", (app_password,))
+    return conn
 
 
 def versoes_aplicadas(conn) -> set[str]:
@@ -89,7 +99,9 @@ def main(argv: list[str] | None = None) -> int:
         print(f"ERRO: nenhum .sql em {diretorio}", file=sys.stderr)
         return 2
 
-    conn = conectar(args.url)
+    app_password = os.getenv("STELLSPY_APP_PASSWORD", "").strip() or None
+
+    conn = conectar(args.url, app_password)
     try:
         aplicadas = versoes_aplicadas(conn)
         conn.commit()
