@@ -38,13 +38,19 @@ import app.db  # noqa: F401  (efeito colateral necessário)
 RAIZ_BACKEND = pathlib.Path(__file__).resolve().parents[2]
 DIR_MIGRACOES = RAIZ_BACKEND.parent / "supabase" / "migrations"
 
+# Credencial da role de aplicação: NUNCA no repositório de migrações.
+# Em desenvolvimento/teste usamos uma senha local descartável; em qualquer
+# ambiente real, `STELLSPY_APP_PASSWORD` precisa estar definida.
+SENHA_APP = os.getenv("STELLSPY_APP_PASSWORD", "dev-local-app-password")
+os.environ.setdefault("STELLSPY_APP_PASSWORD", SENHA_APP)
+
 URL_OWNER = os.getenv(
     "STELLSPY_TEST_DB_OWNER",
     "postgresql+psycopg2://stellspy_owner:stellspy_dev@localhost:55432/stellspy",
 )
 URL_APP = os.getenv(
     "STELLSPY_TEST_DB_APP",
-    "postgresql+psycopg2://stellspy_app:stellspy_app_dev_only@localhost:55432/stellspy",
+    f"postgresql+psycopg2://stellspy_app:{SENHA_APP}@localhost:55432/stellspy",
 )
 
 
@@ -171,6 +177,8 @@ def cenario(sql_owner: Any, banco_limpo: Any) -> dict[str, Any]:
     # api_key da obra também tem índice único.
     chave_a = f"alfa-{uuid.uuid4().hex[:16]}"
     chave_b = f"beta-{uuid.uuid4().hex[:16]}"
+    ids["api_key_a"] = chave_a
+    ids["api_key_b"] = chave_b
 
     with sql_owner.begin() as conn:
         conn.execute(
