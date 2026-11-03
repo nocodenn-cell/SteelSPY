@@ -289,7 +289,11 @@ def post_conferir(
     }
 
 
-@router.get("/conferir/{nfe_log_id}/laudo.pdf")
+# Devolve Response (bytes do PDF) ou RedirectResponse (302), nunca um modelo
+# Pydantic. A anotacao de retorno e uma uniao de subclasses de Response e, a
+# partir do FastAPI 0.162, isso exige response_model=None no decorador — sem
+# ele o import do router falha com FastAPIError e a API nao sobe.
+@router.get("/conferir/{nfe_log_id}/laudo.pdf", response_model=None)
 def get_laudo_pdf(
     nfe_log_id: UUID,
     db: Session = Depends(get_db),
