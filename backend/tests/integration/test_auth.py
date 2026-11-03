@@ -176,7 +176,7 @@ def test_cookie_adulterado_e_rejeitado(cliente: Any, equipe: dict[str, Any]) -> 
 
     # Troca o último caractere da assinatura.
     corpo, assinatura = token.rsplit(".", 1)
-    adulterado = f"{corpo}.{('a' if assinatura[-1] != 'a' else 'b')}{assinatura[1:]}"
+    adulterado = f"{corpo}.{assinatura[:-1]}{'a' if assinatura[-1] != 'a' else 'b'}"
     cliente.cookies.set("stellspy_sessao", adulterado)
 
     assert cliente.get("/auth/eu").status_code == 401
