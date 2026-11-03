@@ -216,12 +216,64 @@ def cenario(sql_owner: Any, banco_limpo: Any) -> dict[str, Any]:
         # a partir de um log de conferência.
         conn.execute(
             text(
-                "INSERT INTO nfe_logs (id, chave_acesso, obra_id, status_conferencia) VALUES "
-                "(:la, :ka, :oa, 'VERDE'), (:lb, :kb, :ob, 'VERDE')"
+                "INSERT INTO nfe_logs (id, tenant_id, chave_acesso, obra_id, status_conferencia) VALUES "
+                "(:la, :ta, :ka, :oa, 'VERDE'), (:lb, :tb, :kb, :ob, 'VERDE')"
             ),
             {
-                "la": ids["nfe_a"], "ka": "1" * 44, "oa": ids["obra_a"],
-                "lb": ids["nfe_b"], "kb": "2" * 44, "ob": ids["obra_b"],
+                "la": ids["nfe_a"], "ka": "1" * 44, "oa": ids["obra_a"], "ta": ids["tenant_a"],
+                "lb": ids["nfe_b"], "kb": "2" * 44, "ob": ids["obra_b"], "tb": ids["tenant_b"],
+            },
+        )
+
+        # Itens das conferências: é onde o dado de negócio realmente vive.
+        conn.execute(
+            text(
+                "INSERT INTO nfe_itens (tenant_id, nfe_log_id, item_numero, material_recebido, "
+                "status_item, divergencias) VALUES "
+                "(:ta, :la, 1, 'Vergalhao CA-50 10mm', 'VERDE', '[]'::jsonb), "
+                "(:tb, :lb, 1, 'Vergalhao CA-50 12.5mm', 'VERMELHO', '[]'::jsonb)"
+            ),
+            {
+                "ta": ids["tenant_a"], "la": ids["nfe_a"],
+                "tb": ids["tenant_b"], "lb": ids["nfe_b"],
+            },
+        )
+
+        # Especificações por obra. A quantidade do tenant A casa com a entrega
+        # de 100 m usada no teste de escrita — assim o status é VERDE de forma
+        # determinística (com 1000 m a divergência seria de 90%).
+        conn.execute(
+            text(
+                "INSERT INTO especificacoes (tenant_id, obra_id, material_tipo, bitola_mm, "
+                "marca_exigida, qtd_planejada_metros) VALUES "
+                "(:ta, :oa, 'CA-50', 10.0, 'GERDAU', 100.0), "
+                "(:tb, :ob, 'CA-50', 12.5, 'GERDAU', 2000.0)"
+            ),
+            {
+                "ta": ids["tenant_a"], "oa": ids["obra_a"],
+                "tb": ids["tenant_b"], "ob": ids["obra_b"],
+            },
+        )
+
+        # Fila de retentativa: uma linha pendente por tenant.
+        # A fila é global (o worker reivindica por ordem de proxima_tentativa).
+        # Para o cenário ser determinístico, as linhas pendentes de execuções
+        # anteriores são encerradas antes de inserir as deste teste.
+        conn.execute(
+            text(
+                "UPDATE fila_nfe SET status = 'processado', updated_at = NOW() "
+                "WHERE status IN ('pendente', 'processando')"
+            )
+        )
+        conn.execute(
+            text(
+                "INSERT INTO fila_nfe (tenant_id, obra_id, chave_acesso, proxima_tentativa, status) "
+                "VALUES (:ta, :oa, :ka, NOW() - INTERVAL '1 minute', 'pendente'), "
+                "(:tb, :ob, :kb, NOW() - INTERVAL '1 minute', 'pendente')"
+            ),
+            {
+                "ta": ids["tenant_a"], "oa": ids["obra_a"], "ka": "1" * 44,
+                "tb": ids["tenant_b"], "ob": ids["obra_b"], "kb": "2" * 44,
             },
         )
 
