@@ -28,6 +28,7 @@ ACOES: Final = (
     "criar_recebimento",
     "anexar_evidencia",
     "ver_evidencia",
+    "ver_recebimento",
     "revisar_contagem",
     "override",
     "solicitar_retencao",
@@ -56,6 +57,10 @@ MATRIZ: Final[dict[str, dict[str, bool]]] = {
     },
     "ver_evidencia": {
         # Quem fotografou precisa rever a foto; quem audita precisa vê-la.
+        "admin_tenant": True, "engenheiro": True, "fiscal": True, "auditor": True,
+    },
+    "ver_recebimento": {
+        # O histórico do que chegou é leitura: quem está na obra consulta, o auditor também.
         "admin_tenant": True, "engenheiro": True, "fiscal": True, "auditor": True,
     },
     "revisar_contagem": {

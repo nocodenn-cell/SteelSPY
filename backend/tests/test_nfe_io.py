@@ -46,3 +46,16 @@ def test_adapter_raiz_emitente_nome_e_item_plano():
     out = _adaptar_resposta_nfe_io(raw)
     assert out["emitente_nome"] == "ACME"
     assert out["itens"][0]["unidade_original"] == "UN"
+
+
+def test_adapter_preserva_codigo_do_produto():
+    """`cProd` é o que decide a correlação sem ambiguidade: perdê-lo é voltar a chutar."""
+    raw = {
+        "itens": [
+            {"prod": {"cProd": "ACO-10-GEU", "xProd": "Vergalhão 10mm", "qCom": 500.0, "uCom": "M"}},
+            {"cProd": "ACO-12-GEU", "xProd": "Vergalhão 12,5mm", "qCom": 300.0, "uCom": "M"},
+            {"xProd": "Sem código", "qCom": 10.0, "uCom": "M"},
+        ],
+    }
+    out = _adaptar_resposta_nfe_io(raw)
+    assert [i["codigo_produto"] for i in out["itens"]] == ["ACO-10-GEU", "ACO-12-GEU", None]

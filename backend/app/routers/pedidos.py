@@ -38,6 +38,12 @@ class ItemPedido(BaseModel):
     quantidade: float = Field(..., gt=0)
     unidade: str = Field(..., min_length=1, max_length=20)
     preco_unitario: float | None = Field(None, ge=0)
+    codigo_produto_fornecedor: str | None = Field(
+        None,
+        max_length=120,
+        description="Código do produto no fornecedor (o cProd da NF-e). Base da correlação.",
+    )
+    referencia_erp: str | None = Field(None, max_length=120)
     atributos: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -69,6 +75,18 @@ class ConciliarBody(BaseModel):
 class DecisaoBody(BaseModel):
     decisao: Literal["aceita", "rejeitada"]
     justificativa: str = Field(..., min_length=5, max_length=4000)
+
+
+class CorrelacaoBody(BaseModel):
+    pedido_item_id: UUID
+    nfe_log_id: UUID
+    nfe_item_numero: int = Field(..., ge=1)
+    quantidade: float | None = Field(
+        None,
+        gt=0,
+        description="Parte do item atribuída a esta linha. Omisso = item inteiro.",
+    )
+    observacao: str | None = Field(None, max_length=2000)
 
 
 # ---------------------------------------------------------------------------
@@ -208,6 +226,34 @@ def post_vincular_nfe(
         raise _erro(exc) from exc
 
 
+@router.get("/obras/{obra_id}/nfe")
+def get_nfe_da_obra(
+    obra_id: UUID,
+    request: Request,
+    db: Session = Depends(get_db),
+    limite: int = 50,
+) -> dict[str, Any]:
+    """Notas processadas na obra — é daqui que a tela de vínculo lista o que procurar."""
+    sessao = sessao_atual(request, db)
+    _obra_autorizada(db, sessao, obra_id, "ver_recebimento")
+    return {"itens": svc.listar_nfe_da_obra(db, obra_id=obra_id, limite=min(max(limite, 1), 200))}
+
+
+@router.get("/pedidos/{pedido_id}/nfe")
+def get_nfe_do_pedido(
+    pedido_id: UUID,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """NF-e vinculadas ao pedido, com item a item — sem isto ninguém correlaciona."""
+    sessao = sessao_atual(request, db)
+    _pedido_autorizado(db, sessao, pedido_id, "ver_recebimento")
+    try:
+        return {"itens": svc.listar_nfe_do_pedido(db, pedido_id)}
+    except svc.ErroPedido as exc:
+        raise _erro(exc) from exc
+
+
 @router.post("/pedidos/{pedido_id}/conciliar", status_code=201)
 def post_conciliar(
     pedido_id: UUID,
@@ -217,7 +263,9 @@ def post_conciliar(
 ) -> dict[str, Any]:
     sessao = sessao_atual(request, db)
     exigir_csrf(request, sessao)
-    _pedido_autorizado(db, sessao, pedido_id, "gerenciar_pedido")
+    # Conciliar é ato de quem opera o recebimento, não de quem só compra.
+    # O que exige engenharia é a *decisão* sobre a divergência (override), não o cálculo.
+    _pedido_autorizado(db, sessao, pedido_id, "criar_recebimento")
     try:
         resultado = svc.conciliar(
             db,
@@ -281,6 +329,102 @@ def post_decisao(
             justificativa=body.justificativa,
             usuario_id=sessao.usuario_id,
             usuario_email=sessao.email,
+        )
+    except svc.ErroPedido as exc:
+        raise _erro(exc) from exc
+
+
+@router.get("/pedidos/{pedido_id}/conciliacoes")
+def get_conciliacoes(
+    pedido_id: UUID,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    sessao = sessao_atual(request, db)
+    _pedido_autorizado(db, sessao, pedido_id, "ver_recebimento")
+    return {"itens": svc.listar_conciliacoes(db, pedido_id)}
+
+
+# ---------------------------------------------------------------------------
+# Correlação confirmada por responsável
+# ---------------------------------------------------------------------------
+
+
+@router.post("/pedidos/{pedido_id}/correlacoes", status_code=201)
+def post_correlacao(
+    pedido_id: UUID,
+    body: CorrelacaoBody,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """
+    Diz, com a assinatura de quem decidiu, qual item de NF-e é de qual linha.
+
+    É a saída para a ambiguidade: o motor não escolhe, o responsável escolhe.
+    Por isso o papel exigido é o de quem gerencia o pedido, e a decisão fica
+    registrada com autor e horário.
+    """
+    sessao = sessao_atual(request, db)
+    exigir_csrf(request, sessao)
+    _pedido_autorizado(db, sessao, pedido_id, "gerenciar_pedido")
+    try:
+        return svc.correlacionar_manualmente(
+            db,
+            tenant_id=sessao.tenant_id,
+            pedido_id=pedido_id,
+            pedido_item_id=body.pedido_item_id,
+            nfe_log_id=body.nfe_log_id,
+            nfe_item_numero=body.nfe_item_numero,
+            quantidade=body.quantidade,
+            observacao=body.observacao,
+            usuario_id=sessao.usuario_id,
+        )
+    except svc.ErroPedido as exc:
+        raise _erro(exc) from exc
+
+
+@router.get("/pedidos/{pedido_id}/correlacoes")
+def get_correlacoes(
+    pedido_id: UUID,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    sessao = sessao_atual(request, db)
+    _pedido_autorizado(db, sessao, pedido_id, "ver_recebimento")
+    return {"itens": svc.listar_correlacoes(db, pedido_id)}
+
+
+@router.delete("/correlacoes/{correlacao_id}")
+def delete_correlacao(
+    correlacao_id: UUID,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """
+    Encerra uma correlação — não apaga o registro, marca como removida.
+
+    A correlação é resolvida pelo próprio tenant via RLS; a obra é descoberta a
+    partir dela para não haver como autorizar em obra errada.
+    """
+    sessao = sessao_atual(request, db)
+    exigir_csrf(request, sessao)
+    abrir_contexto(db, sessao)
+    linha = db.execute(
+        text("""
+            SELECT i.pedido_id AS pid, p.obra_id AS oid
+            FROM correlacoes_humanas c
+            JOIN pedido_itens i ON i.id = c.pedido_item_id
+            JOIN pedidos_compra p ON p.id = i.pedido_id
+            WHERE c.id = :id
+        """),
+        {"id": str(correlacao_id)},
+    ).mappings().first()
+    if linha is None:
+        raise HTTPException(status_code=404, detail="correlação não encontrada")
+    autorizar_na_obra(db, sessao, linha["oid"], "gerenciar_pedido")
+    try:
+        return svc.desfazer_correlacao(
+            db, correlacao_id=correlacao_id, usuario_id=sessao.usuario_id
         )
     except svc.ErroPedido as exc:
         raise _erro(exc) from exc

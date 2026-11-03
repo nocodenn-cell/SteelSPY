@@ -45,6 +45,10 @@ ESPERADO: dict[tuple[str, str], bool] = {
     ("ver_evidencia", "engenheiro"): True,
     ("ver_evidencia", "fiscal"): True,
     ("ver_evidencia", "auditor"): True,
+    ("ver_recebimento", "admin_tenant"): True,
+    ("ver_recebimento", "engenheiro"): True,
+    ("ver_recebimento", "fiscal"): True,
+    ("ver_recebimento", "auditor"): True,
     ("revisar_contagem", "admin_tenant"): True,
     ("revisar_contagem", "engenheiro"): True,
     ("revisar_contagem", "fiscal"): True,
@@ -68,11 +72,12 @@ ESPERADO: dict[tuple[str, str], bool] = {
 }
 
 
-def test_matriz_tem_44_celulas() -> None:
-    """11 ações × 4 papéis. Se alguém adicionar ação sem papel, o teste avisa."""
-    assert len(ACOES) == 11
+def test_matriz_tem_48_celulas() -> None:
+    """12 ações × 4 papéis. Se alguém adicionar ação sem papel, o teste avisa."""
+    assert len(ACOES) == 12
     assert len(PAPEIS_GLOBAIS) == 4
-    assert len(ESPERADO) == 44
+    assert len(ESPERADO) == 48
+    assert set(ACOES) == set(MATRIZ), "ACOES e MATRIZ precisam ter as mesmas ações"
     for acao in ACOES:
         for papel in PAPEIS_GLOBAIS:
             assert (acao, papel) in ESPERADO, f"célula ausente na especificação: {acao}/{papel}"
@@ -101,7 +106,14 @@ def test_intersecao_global_e_obra(acao: str) -> None:
 def test_auditor_nao_ganha_escrita_por_ser_admin_em_outra_obra() -> None:
     """admin_tenant global + auditor na obra = somente leitura naquela obra."""
     permitidas = acoes_permitidas(papel_global="admin_tenant", papel_obra="auditor")
-    assert permitidas == ["ver_evidencia", "exportar_dossie"]
+    assert permitidas == ["ver_evidencia", "ver_recebimento", "exportar_dossie"]
+
+
+def test_ver_recebimento_e_leitura_sem_escrita() -> None:
+    """Ler o histórico não autoriza registrar recebimento nem anexar foto."""
+    assert pode_executar("ver_recebimento", papel_global="auditor", papel_obra="auditor") is True
+    assert pode_executar("criar_recebimento", papel_global="auditor", papel_obra="auditor") is False
+    assert pode_executar("anexar_evidencia", papel_global="auditor", papel_obra="auditor") is False
 
 
 def test_fiscal_nao_faz_override_nem_retem_pagamento() -> None:

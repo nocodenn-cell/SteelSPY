@@ -104,6 +104,9 @@ def _normalizar_item_nfe(it: dict[str, Any]) -> dict[str, Any]:
     desc = it.get("descricao") or it.get("xProd") or it.get("produto")
     base = {
         "descricao": desc,
+        "codigo_produto": (
+            it.get("codigo_produto") or it.get("cProd") or it.get("codigo") or it.get("codigo_produto_fornecedor")
+        ),
         "bitola_mm": _as_float(it.get("bitola_mm") or it.get("bitola") or it.get("diametro_mm")),
         "marca": it.get("marca") or it.get("fabricante"),
         "quantidade": _as_float(it.get("quantidade") or it.get("qCom") or it.get("qtd")),
