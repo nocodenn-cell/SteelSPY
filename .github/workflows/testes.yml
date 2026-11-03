@@ -1,0 +1,86 @@
+# Os 418 testes da suíte, contra um PostgreSQL de verdade.
+#
+# Por que o serviço é um container e não um mock: o isolamento multiempresa
+# acontece no RLS do PostgreSQL, não no Python. Sem servidor real, os testes de
+# integração pulam — e pularam em silêncio na última rodada local, quando o
+# daemon do Docker morreu no meio da sessão. É exatamente isso que este workflow
+# não pode deixar passar: ver aqui embaixo "skipped" tratado como falha.
+#
+# O serviço reproduz o container documentado em tests/integration/conftest.py
+# (usuário, senha, banco e porta 55432). Com ele igual, nenhum override de URL
+# é preciso — os defaults do conftest já apontam para cá.
+
+name: testes
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  suite:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: stellspy_owner
+          POSTGRES_PASSWORD: stellspy_dev
+          POSTGRES_DB: stellspy
+        ports:
+          - 55432:5432
+        options: >-
+          --health-cmd "pg_isready -U stellspy_owner -d stellspy"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: |
+            backend/requirements.txt
+            backend/requirements-dev.txt
+            backend/constraints.txt
+
+      - name: Instalar o conjunto travado em constraints.txt
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements-dev.txt -c backend/constraints.txt
+
+      - name: Conferir o banco de serviço antes de culpar o código
+        run: |
+          python - <<'PY'
+          import psycopg2
+          try:
+              con = psycopg2.connect(host="localhost", port=55432,
+                                     user="stellspy_owner", password="stellspy_dev",
+                                     dbname="stellspy")
+          except psycopg2.Error as exc:
+              raise SystemExit(f"PostgreSQL de serviço inacessível: {exc}")
+          with con, con.cursor() as cur:
+              cur.execute("SELECT current_user, version()")
+              print("conectado como", *cur.fetchone())
+          con.close()
+          PY
+
+      - name: pytest — skip é falha, não sucesso
+        working-directory: backend
+        run: |
+          set -o pipefail
+          if ! python -m pytest -q -rs 2>&1 | tee /tmp/pytest.log; then
+            echo "::error::a suíte falhou"
+            exit 1
+          fi
+          if grep -qE "[0-9]+ skipped" /tmp/pytest.log; then
+            echo "::error::houve teste pulado — o banco não subiu; skip não é aprovação"
+            exit 1
+          fi
+          grep -E "passed|failed|error" /tmp/pytest.log | tail -1
