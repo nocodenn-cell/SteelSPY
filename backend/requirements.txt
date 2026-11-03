@@ -21,6 +21,10 @@ httpx>=0.28.1,<0.29              # 0.x: teto no minor
 fpdf2>=2.9.0,<2.10               # teto no minor: 'ln=' e 'dest=' estao depreciados
                                  # e 'dest=' sera removido; travar evita quebra silenciosa no PDF
 
+# Parser de multipart exigido pelo FastAPI para upload de arquivo (Fase 1).
+# Apache-2.0. Sem ele, `UploadFile`/`File()` não funcionam.
+python-multipart>=0.0.18,<0.1
+
 # Base IANA de fusos horarios para `zoneinfo` (America/Sao_Paulo, usada em
 # app/services/relatorio_semanal.py). O Windows nao traz a base no sistema e
 # imagens Linux minimas tambem nao; sem este pacote a importacao falha com

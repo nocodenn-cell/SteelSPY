@@ -7,7 +7,7 @@ import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.routers import auth_pwa, auth_usuario, conferencia
+from app.routers import auth_pwa, auth_usuario, conferencia, evidencias
 
 app = FastAPI(title="stellSPY Auditoria NF-e", version="0.1.0")
 
@@ -24,6 +24,7 @@ if _origins:
 app.include_router(auth_pwa.router)
 app.include_router(auth_usuario.router)
 app.include_router(conferencia.router)
+app.include_router(evidencias.router)
 
 
 @app.get("/health")

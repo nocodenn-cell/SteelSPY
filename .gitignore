@@ -72,6 +72,12 @@ temp/
 *.tmp
 *.bak
 *.orig
+
+# --- Armazenamento local de evidências (nunca versionado) ---------------------
+# Fotos de obra são dado de cliente: jamais entram no repositório.
+var/
+backend/var/
+evidencias/
 *.rej
 *.swp
 *~
