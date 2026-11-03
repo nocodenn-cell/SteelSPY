@@ -215,6 +215,13 @@ def main() -> int:
     # máquina local cairia sobre dados de outra pessoa.
     if not HOST.startswith(("localhost", "127.0.0.1", "::1")):
         raise SystemExit(f"seed_demo só roda contra PostgreSQL local (HOST={HOST!r}).")
+
+    # `20261103150200_app_role_senha.sql` exige a credencial da role de aplicação.
+    # Sem ela a migração falha *depois* do DROP, e o banco de demonstração fica
+    # pela metade — exatamente o que aconteceu numa rodada de E2E. O default é o
+    # mesmo dos testes (conftest) e só vale para este banco local descartável.
+    os.environ.setdefault("STELLSPY_APP_PASSWORD", "dev-local-app-password")
+
     criar_banco()
     migrar()
     print(json.dumps(semear(), indent=2, ensure_ascii=False))
