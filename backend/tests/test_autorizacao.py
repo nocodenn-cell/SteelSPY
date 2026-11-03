@@ -29,6 +29,10 @@ ESPERADO: dict[tuple[str, str], bool] = {
     ("editar_especificacao", "engenheiro"): True,
     ("editar_especificacao", "fiscal"): False,
     ("editar_especificacao", "auditor"): False,
+    ("gerenciar_pedido", "admin_tenant"): True,
+    ("gerenciar_pedido", "engenheiro"): True,
+    ("gerenciar_pedido", "fiscal"): False,
+    ("gerenciar_pedido", "auditor"): False,
     ("criar_recebimento", "admin_tenant"): True,
     ("criar_recebimento", "engenheiro"): True,
     ("criar_recebimento", "fiscal"): True,
@@ -64,11 +68,11 @@ ESPERADO: dict[tuple[str, str], bool] = {
 }
 
 
-def test_matriz_tem_40_celulas() -> None:
-    """10 ações × 4 papéis. Se alguém adicionar ação sem papel, o teste avisa."""
-    assert len(ACOES) == 10
+def test_matriz_tem_44_celulas() -> None:
+    """11 ações × 4 papéis. Se alguém adicionar ação sem papel, o teste avisa."""
+    assert len(ACOES) == 11
     assert len(PAPEIS_GLOBAIS) == 4
-    assert len(ESPERADO) == 40
+    assert len(ESPERADO) == 44
     for acao in ACOES:
         for papel in PAPEIS_GLOBAIS:
             assert (acao, papel) in ESPERADO, f"célula ausente na especificação: {acao}/{papel}"
