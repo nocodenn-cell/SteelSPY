@@ -183,3 +183,101 @@ oficial desta sprint. Toda entrega futura compara contra esse artefato.
 | 006 | Teste de isolamento antes da migração | PLANEJADO |
 | 007 | RF-DETR sim / YOLO não | APROVADO (herdado) |
 | 008 | Baseline congelado | IMPLEMENTADO |
+
+---
+
+# ADRs — Correção P-16 (2026-11-03)
+
+## ADR-009 — `response_model=None` na rota de laudo
+
+**Status:** IMPLEMENTADO · TESTADO · commit `851da0a`
+
+**Contexto.** `get_laudo_pdf` devolve dois tipos concretos: `RedirectResponse` (302, quando o PDF já
+está em cache no Storage) e `Response` (bytes do PDF, quando não há Storage). A anotação de retorno
+declarava `Response | RedirectResponse`. Até o FastAPI 0.161 isso era tolerado; a partir do 0.162 a
+união é rejeitada como `response_model` e o import do módulo falha.
+
+**Decisão.** Acrescentar `response_model=None` ao decorador da rota, mantendo a anotação de retorno
+(ela documenta o comportamento e é correta). Nenhuma alteração no corpo da função.
+
+**Consequência.**
+- ✅ `app.main` volta a importar; a API sobe (evidência E12).
+- ✅ Contrato HTTP inalterado (302 ou `application/pdf`); OpenAPI segue com 8 rotas.
+- ✅ Documentação do retorno preservada no código.
+- ⚠️ O padrão precisa ser lembrado: qualquer rota futura que devolva união de `Response` exigirá o
+  mesmo parâmetro.
+
+**Alternativas rejeitadas.**
+| Alternativa | Por que não |
+|-------------|-------------|
+| Trocar a anotação por `-> Any` | Perde a documentação do retorno real |
+| Remover a anotação | Mesmo problema, e piora a legibilidade |
+| Fixar `fastapi<0.162` | Esconde o problema e trava a evolução da dependência |
+| Retornar sempre `Response` (converter o 302) | Quebraria o contrato de redirect já exposto e testado |
+
+---
+
+## ADR-010 — Política de versões reproduzíveis (proposta, **não aplicada**)
+
+**Status:** PROPOSTO · requer aprovação
+
+**Contexto.** `requirements.txt` declara as 7 dependências com `>=` e **sem teto**. Foi exatamente isso
+que produziu o P-16: o `pip install` de hoje resolveu `fastapi 0.162.0`, que rejeita uma construção
+aceita pela 0.115. O mesmo vale para `fpdf2`, cujos parâmetros `ln=` e `dest=` já estão depreciados e
+`dest=` será removido — uma quebra futura silenciosa na geração de PDF.
+
+**Achados de compatibilidade medidos neste ambiente:**
+
+| Pacote | Versão instalada | Observação |
+|--------|------------------|------------|
+| fastapi | 0.162.0 | exige `starlette`, `pydantic`, `annotated-doc`, `opentelemetry-api` |
+| starlette | 1.10.0 | emite `StarletteDeprecationWarning`: usar `httpx` com `TestClient` está depreciado, recomenda `httpx2` |
+| pydantic | 2.14.2 | ok |
+| pydantic-core | 2.50.2 | ok |
+| fpdf2 | 2.9.0 | `ln=` e `dest=` depreciados; **`dest=` será removido** |
+| tzdata | 2026.6 | ok |
+
+**Proposta — duas camadas:**
+
+| Camada | Pacotes | Regra |
+|--------|---------|-------|
+| **Núcleo travado com teto de major** | `fastapi`, `starlette`, `pydantic`, `fpdf2` | `>=<versão testada>,<próximo major` |
+| **Acompanham o upstream** | `uvicorn`, `sqlalchemy`, `httpx`, `psycopg2-binary`, `pytest` | `>=` como hoje |
+| **Registro por release** | todas | `baseline_freeze.txt` atualizado a cada release = lock efetivo |
+
+Valores sugeridos (não aplicados):
+
+```
+fastapi>=0.162.0,<1.0
+starlette>=1.10.0,<2.0
+pydantic>=2.14.0,<3.0
+fpdf2>=2.9.0,<3.0
+```
+
+**Consequência esperada.**
+- ✅ P-16 não se repete com outra dependência de framework.
+- ✅ Quebra de major passa a ser decisão consciente, não acidente de `pip`.
+- ⚠️ Tetos impedem correções de segurança automáticas — exige revisão trimestral.
+- ⚠️ `starlette` é dependência transitiva de `fastapi`; declará-la explicitamente cria risco de
+  conflito. **Recomendação:** usar apenas como *restrição* (`constraints.txt`), não em
+  `requirements.txt`.
+
+**Não aplicado nesta sprint** porque a autorização de P-16 tinha escopo limitado e a missão proíbe
+"upgrades generalizados" e alterações além do escopo. Fica como P-18.
+
+---
+
+## Resumo de status (atualizado)
+
+| ADR | Assunto | Status |
+|-----|---------|--------|
+| 001 | Execução autorizada fora do confinamento | APROVADO |
+| 002 | venv isolado | IMPLEMENTADO / TESTADO |
+| 003 | `tzdata` como workaround | RESOLVIDO em P-02 |
+| 004 | PostgreSQL em container efêmero | PLANEJADO (viabilidade testada) |
+| 005 | `.gitignore` + commit inicial | CONCLUÍDO |
+| 006 | Teste de isolamento antes da migração | PLANEJADO |
+| 007 | RF-DETR sim / YOLO não | APROVADO (herdado) |
+| 008 | Baseline congelado | IMPLEMENTADO |
+| **009** | **`response_model=None` na rota de laudo** | **IMPLEMENTADO / TESTADO** |
+| **010** | **Política de versões com teto** | **PROPOSTO — aguarda aprovação** |

@@ -8,6 +8,48 @@ O projeto **não segue versionamento semântico ainda** — não há tag nem rel
 
 ---
 
+## [Não lançado] — 2026-11-03 — Correção P-16 (inicialização do FastAPI)
+
+### Corrigido
+
+- **`app.main` não importava.** `app/routers/conferencia.py` anotava a rota de laudo como
+  `-> Response | RedirectResponse`; o FastAPI 0.162 rejeita a união de subclasses de `Response` como
+  `response_model` e levanta `FastAPIError` no import. A API **não subia**.
+  Correção: `response_model=None` no decorador da rota (uma linha + comentário). Nenhuma lógica de
+  geração de PDF foi tocada; nenhum contrato HTTP mudou.
+  Commit: `851da0acb1cd149d5088bf271ef9efcfda398c58`
+
+### Adicionado
+
+- `backend/tests/test_app_boot.py` — 13 testes de regressão que faltavam desde o início do projeto:
+  import de `app.main`, import dos 32 módulos de `app/`, inicialização do `TestClient`, `GET /health`,
+  registro das 8 rotas, contrato OpenAPI, `response_model is None` na rota de laudo, path param UUID,
+  404 JSON para `nfe_log` inexistente (banco substituído por stub) e regressão de geração de PDF.
+
+### Alterado — documentação
+
+- `docs/execucao/DECISOES_TECNICAS.md` — ADR-009 (correção da anotação) e ADR-010 (política de versões)
+- `docs/execucao/EVIDENCIAS.md` — E12 (antes/depois da correção)
+- `docs/execucao/MATRIZ_GO_NO_GO.md` — G-02 reclassificado, G-10 criado e fechado
+
+### Resultado dos testes
+
+| Momento | Resultado |
+|---------|-----------|
+| Antes da correção (novo teste) | 5 failed, 1 passed, 6 errors |
+| Depois da correção (novo teste) | **13 passed** |
+| Suíte completa antes | 69 passed |
+| **Suíte completa depois** | **82 passed** (69 + 13) |
+| Imports dos 32 módulos | **0 falhas** |
+
+### Não alterado
+
+- `requirements.txt` — nenhuma versão alterada (a política está **proposta** em ADR-010, não aplicada)
+- Migrações, banco, Supabase remoto, autenticação, PWA, dashboard
+- Nenhum push, nenhum deploy
+
+---
+
 ## [Não lançado] — 2026-11-03 — Sprint de Engenharia 0
 
 ### Adicionado — documentação

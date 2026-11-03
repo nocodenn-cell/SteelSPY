@@ -363,3 +363,47 @@ commit inicial significa não poder desfazer. Primeiro destravar (20 min), depoi
 | (Recomendado) 10 entrevistas | G-09 | 23 h, R$ 0 |
 
 **G-07 e G-08 só são exigidos antes da Trilha B**, não da Fase 0.
+
+---
+
+## 15. REVISÃO — Correção P-16 (2026-11-03)
+
+> Substitui o status de **G-02** em §14.2 e cria **G-10**. Fonte: `EVIDENCIAS.md` E12.
+
+### 15.1 O que G-02 media errado
+
+G-02 estava "ABERTO com ressalva" porque 69 testes passavam. Isso era **insuficiente**: os 69 testes
+passavam enquanto `app.main` **não importava**. O gate media a coisa errada — saúde do domínio, não
+capacidade de a aplicação subir.
+
+### 15.2 Gates revisados
+
+| Gate | Critério | Evidência | Status |
+|------|----------|-----------|--------|
+| **G-02** | Domínio testado e estável | 82 testes verdes; `app/domain` coberto | 🟢 **ABERTO** |
+| **G-10** | **Aplicação importa, inicializa e serve** | E12: `import app.main` OK, `uvicorn` import OK, `GET /health` → 200, 8 rotas no OpenAPI, 32/32 módulos | 🟢 **ABERTO (fechado nesta revisão)** |
+| **G-03** | Reprodutível em máquina limpa | E9: ambiente recriado do zero | 🟢 **ABERTO** |
+| **G-04** | Controle de versão | 4 commits, working tree limpo | 🟢 **ABERTO** |
+| **G-05** | Dependências declaradas completas | E9: `tzdata` instalado pelo `requirements.txt` | 🟢 **ABERTO** |
+| **G-06** | Fase 0 autorizada | depende de G-09 (dor comercial) | 🔴 **FECHADO** |
+| **G-07** | Gate de licença automatizado | não existe | 🔴 **FECHADO** (só bloqueia Trilha B) |
+| **G-08** | Privacidade Roboflow documentada | não existe | 🔴 **FECHADO** (só bloqueia Trilha B) |
+| **G-09** | Dor comercial validada | 0/10 entrevistas | 🔴 **FECHADO** |
+| **G-11** | Versões com teto de major (ADR-010) | proposta, não aplicada | 🟡 **PARCIAL** |
+
+### 15.3 Decisão desta revisão
+
+> ## ✅ **G-10 fechado.** A aplicação inicia.
+> ## 🔴 **G-06 permanece fechado.** A Fase 0 continua não autorizada.
+
+A trilha técnica está liberada até o limite do escopo atual: o projeto **roda** e **está versionado**.
+O que falta para a Fase 0 não é mais técnico — é a decisão de negócio (G-09) e a autorização explícita.
+
+### 15.4 Placar
+
+| Bloco | Gates |
+|-------|-------|
+| Técnico (pré-Fase 0) | **5 de 6 abertos** (falta apenas o de versões, parcial) |
+| Produto (Fase 0) | 0 de 1 — aguarda autorização |
+| Comercial | 0 de 1 — 0/10 entrevistas |
+| Trilha B | 0 de 2 — bloqueada por licença e privacidade |

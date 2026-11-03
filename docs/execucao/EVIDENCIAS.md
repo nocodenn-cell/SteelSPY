@@ -366,3 +366,110 @@ anota apenas `Response`.
 | **E9** | **Reprodutibilidade em ambiente limpo** | **TESTADO** | executado |
 | **E10** | **App não inicia (FastAPIError)** | **TESTADO — bloqueante** | executado |
 | **E11** | **Estado do Git (2 commits)** | **TESTADO** | executado |
+| **E12** | **Correção P-16: app volta a iniciar** | **TESTADO** | executado |
+
+---
+
+## E12 — Correção P-16: a aplicação volta a iniciar
+
+**Estado: TESTADO** · Executado em 2026-11-03 · Commit `851da0acb1cd149d5088bf271ef9efcfda398c58`
+
+### E12.1 Erro anterior (reproduzido)
+
+```
+$ python -c "import app.main"
+fastapi.exceptions.FastAPIError: Invalid args for response field!
+Hint: check that starlette.responses.Response | starlette.responses.RedirectResponse
+is a valid Pydantic field type ...
+```
+
+| Item | Valor |
+|------|-------|
+| Origem | `app/routers/conferencia.py:298` — `) -> Response \| RedirectResponse:` |
+| Versões | fastapi 0.162.0 · starlette 1.10.0 · pydantic 2.14.2 · pydantic-core 2.50.2 · fpdf2 2.9.0 |
+| Alcance | 2 de 32 módulos falhavam (`app.main`, `app.routers.conferencia`) |
+
+### E12.2 Análise que autorizou a correção
+
+Confirmou-se que a rota **nunca** devolve modelo Pydantic:
+
+| Caminho | Retorno | Linha |
+|---------|---------|-------|
+| laudo em cache no Storage | `RedirectResponse(url, 302)` | `conferencia.py:335` |
+| caminho feliz com upload | `RedirectResponse(public_url, 302)` | `conferencia.py:366` |
+| fallback inline | `Response(content=pdf_bytes, media_type="application/pdf")` | `conferencia.py:368` |
+
+Portanto `response_model=None` é correto e não altera comportamento.
+
+### E12.3 Alteração aplicada
+
+`app/routers/conferencia.py` — 4 linhas de comentário adicionadas, 1 linha alterada:
+
+```diff
++# Devolve Response (bytes do PDF) ou RedirectResponse (302), nunca um modelo
++# Pydantic. A anotacao de retorno e uma uniao de subclasses de Response e, a
++# partir do FastAPI 0.162, isso exige response_model=None no decorador — sem
++# ele o import do router falha com FastAPIError e a API nao sobe.
+-@router.get("/conferir/{nfe_log_id}/laudo.pdf")
++@router.get("/conferir/{nfe_log_id}/laudo.pdf", response_model=None)
+ def get_laudo_pdf(
+```
+
+Nenhuma linha do corpo da função foi alterada.
+
+### E12.4 Teste que falhava antes e passa depois
+
+| Momento | `tests/test_app_boot.py` |
+|---------|--------------------------|
+| **Antes** da correção | ❌ 5 failed, 1 passed, 6 errors |
+| **Depois** da correção | ✅ **13 passed** em 1,32 s |
+
+Falhavam antes: `test_app_main_importa`, `test_todos_os_modulos_do_pacote_importam`,
+`test_todas_as_rotas_esperadas_estao_registradas`, `test_rota_laudo_tem_response_model_none`,
+`test_rota_laudo_aceita_uuid_e_rejeita_formato_invalido` (+6 erros de fixture).
+
+### E12.5 Quantidade final de testes
+
+```
+$ python -m pytest --collect-only -q
+82 tests collected
+
+$ python -m pytest -q
+82 passed, 33 warnings in 1.87s
+```
+
+**69 → 82 testes** (+13). Nenhum teste anterior foi alterado.
+
+### E12.6 Resultado dos imports
+
+```
+modulos: 32  falhas: 0
+imports exit: 0
+```
+
+### E12.7 Resultado da inicialização
+
+```
+rotas no OpenAPI: 8
+GET /health -> 200 {'status': 'ok'}
+UVICORN IMPORT OK: stellSPY Auditoria NF-e
+```
+
+### E12.8 Achado colateral — FastAPI 0.162 não achata rotas
+
+O teste inicial falhou por premissa errada minha, não por defeito do produto: em `fastapi 0.162`,
+`include_router` cria um `_IncludedRouter` e as rotas **não** aparecem em `app.routes`. Corrigido com um
+helper que atravessa `original_router` e funciona nos dois formatos.
+
+**Consequência prática:** código futuro que itere `app.routes` para inspecionar endpoints encontrará
+apenas `/health` e as rotas internas de documentação.
+
+### E12.9 Achado colateral — rota de PDF retorna 500 com banco indisponível
+
+```
+GET /conferir/<uuid>/laudo.pdf  (sem banco)
+sqlalchemy.exc.OperationalError → 500
+```
+
+Comportamento **pré-existente**, não introduzido pela correção: não há handler para erro de banco.
+Nos testes é contornado com stub de sessão (404). Registrado como P-17.

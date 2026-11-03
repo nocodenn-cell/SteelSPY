@@ -40,7 +40,31 @@
 | Correção proposta | `@router.get(..., response_model=None)` no decorador; revisar `get_divergencias_pdf` (`:378`) |
 | Restrição | É código de produto — **exige autorização** |
 | Esforço | 15 min + 1 teste de fumaça que importe `app.main` |
-| Estado | `BLOQUEADO` (aguarda autorização) |
+| Estado | ✅ `IMPLEMENTADO` + `TESTADO` — commit `851da0a` |
+
+**Resultado:** `app.main` importa, `uvicorn` carrega a app, `GET /health` → 200, 8 rotas no OpenAPI,
+32/32 módulos importam. Suíte: **69 → 82 testes**.
+
+### P-17 · Handler para erro de banco (500 → 503)
+
+| Campo | Valor |
+|-------|-------|
+| Descoberto em | verificação de boot da P-16 |
+| Sintoma | `GET /conferir/<uuid>/laudo.pdf` sem banco → `OperationalError` → **500** |
+| Efeito | Cliente recebe erro genérico; monitoramento não distingue queda de banco de bug |
+| Correção proposta | exception handler global para `sqlalchemy.exc.OperationalError` → 503 JSON |
+| Pré-existente? | **Sim** — não foi introduzido pela P-16 |
+| Esforço | 1 h |
+| Estado | `PLANEJADO` |
+
+### P-18 · Aplicar política de versões (ADR-010)
+
+| Campo | Valor |
+|-------|-------|
+| O que | Teto de major para `fastapi`, `pydantic`, `fpdf2`; `starlette` em `constraints.txt` |
+| Por que | Foi a ausência de teto que produziu o P-16 |
+| Risco | Tetos bloqueiam correções de segurança — exige revisão trimestral |
+| Estado | `PLANEJADO` — aguarda aprovação |
 
 ### P-03 · Gate mecânico de licenciamento
 
