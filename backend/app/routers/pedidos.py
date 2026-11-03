@@ -11,7 +11,7 @@ from datetime import date
 from typing import Any, Literal
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 from sqlalchemy import text
 from sqlalchemy.orm import Session
@@ -20,6 +20,7 @@ from app.auth_usuario import SessaoAtual, abrir_contexto
 from app.db import get_db
 from app.deps import autorizar_na_obra, exigir_csrf, sessao_atual
 from app.services import pedidos as svc
+from app.services.dossie_pdf import gerar_dossie_pdf_bytes, nome_arquivo_dossie
 from app.tenant import consultar_obra
 
 router = APIRouter(tags=["pedidos"])
@@ -447,3 +448,36 @@ def get_dossie(
         return svc.montar_dossie(db, pedido_id=pedido_id)
     except svc.ErroPedido as exc:
         raise _erro(exc) from exc
+
+
+@router.get("/pedidos/{pedido_id}/dossie.pdf", response_model=None)
+def get_dossie_pdf(
+    pedido_id: UUID,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> Response:
+    """
+    Dossiê em PDF. É o mesmo conteúdo do JSON, apenas impresso.
+
+    Geração síncrona e em memória: um dossiê tem algumas dezenas de linhas, e
+    guardar PDF em storage criaria a pergunta "qual versão é a prova?" — o fato
+    provado são as linhas do banco com seus hashes, não o arquivo.
+    """
+    sessao = sessao_atual(request, db)
+    _pedido_autorizado(db, sessao, pedido_id, "exportar_dossie")
+    try:
+        dossie = svc.montar_dossie(db, pedido_id=pedido_id)
+    except svc.ErroPedido as exc:
+        raise _erro(exc) from exc
+
+    conteudo = gerar_dossie_pdf_bytes(dossie)
+    nome = nome_arquivo_dossie(dossie)
+    return Response(
+        content=conteudo,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'inline; filename="{nome}"',
+            "X-Dossie-Id": str(dossie["id"]),
+            "Cache-Control": "private, max-age=0, no-store",
+        },
+    )

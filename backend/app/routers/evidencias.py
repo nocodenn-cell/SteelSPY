@@ -197,6 +197,88 @@ def post_evidencia(
     }
 
 
+@router.get("/obras/{obra_id}/recebimentos")
+def get_recebimentos(
+    obra_id: UUID,
+    request: Request,
+    db: Session = Depends(get_db),
+    limite: int = 30,
+) -> dict[str, Any]:
+    """
+    Histórico de recebimentos da obra, com quantas fotos cada um tem.
+
+    É a tela que responde "o que já entrou hoje" sem perguntar para alguém. A
+    contagem vem de um único agregado de propósito: listar um `SELECT` por
+    recebimento faria esta página depender do tamanho do dia.
+    """
+    sessao = sessao_atual(request, db)
+    _obra_autorizada(db, sessao, obra_id, "ver_recebimento")
+
+    linhas = db.execute(
+        text("""
+            SELECT r.id, r.tipo, r.status, r.observacoes, r.recebido_em, r.criado_por,
+                   u.nome AS criado_por_nome,
+                   count(e.id) AS total_evidencias
+            FROM recebimentos r
+            LEFT JOIN evidencias e ON e.recebimento_id = r.id AND e.removido_em IS NULL
+            LEFT JOIN usuarios u ON u.id = r.criado_por
+            WHERE r.obra_id = :o
+            GROUP BY r.id, u.nome
+            ORDER BY r.recebido_em DESC
+            LIMIT :lim
+        """),
+        {"o": str(obra_id), "lim": min(max(limite, 1), 200)},
+    ).mappings().all()
+
+    return {
+        "itens": [
+            {
+                "id": str(r["id"]),
+                "tipo": r["tipo"],
+                "status": r["status"],
+                "observacoes": r["observacoes"],
+                "recebido_em": r["recebido_em"].isoformat(),
+                "criado_por_nome": r["criado_por_nome"],
+                "total_evidencias": int(r["total_evidencias"]),
+            }
+            for r in linhas
+        ]
+    }
+
+
+@router.get("/obras/{obra_id}/evidencias")
+def get_evidencias_da_obra(
+    obra_id: UUID,
+    request: Request,
+    recebimento_id: UUID | None = None,
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Evidências da obra (ou de um recebimento), sem nunca expor `storage_key`."""
+    sessao = sessao_atual(request, db)
+    _obra_autorizada(db, sessao, obra_id, "ver_evidencia")
+
+    where = "obra_id = :o AND removido_em IS NULL"
+    params: dict[str, Any] = {"o": str(obra_id)}
+    if recebimento_id is not None:
+        where += " AND recebimento_id = :r"
+        params["r"] = str(recebimento_id)
+
+    linhas = db.execute(
+        text(f"""
+            SELECT * FROM evidencias WHERE {where}
+            ORDER BY recebida_em DESC
+        """),
+        params,
+    ).mappings().all()
+
+    return {
+        "itens": [
+            {**svc._serializar(r), "conteudo_url": f"/evidencias/{r['id']}/conteudo"}
+            for r in linhas
+        ]
+    }
+
+
 @router.get("/evidencias/{evidencia_id}")
 def get_evidencia(
     evidencia_id: UUID,

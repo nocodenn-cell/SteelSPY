@@ -21,7 +21,7 @@ para revisão humana em vez de ser escolhido por chute.
 from __future__ import annotations
 
 import json
-from datetime import date
+from datetime import date, datetime, timezone
 from decimal import Decimal
 from typing import Any
 from uuid import UUID
@@ -814,7 +814,7 @@ def decidir_conciliacao(
         "justificativa": justificativa,
         "usuario_id": str(usuario_id),
         "usuario_email": usuario_email,
-        "em": __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat(),
+        "em": datetime.now(timezone.utc).isoformat(),
         "severidade_tecnica_no_momento": linha["severidade_tecnica"],
     }
     db.execute(
@@ -865,6 +865,13 @@ def listar_conciliacoes(db: Session, pedido_id: UUID | str) -> list[dict[str, An
                 "requer_revisao_humana": bool(resultado.get("requer_revisao_humana")),
                 "progresso": resultado.get("progresso"),
                 "ambiguidades": resultado.get("ambiguidades") or [],
+                # O resultado guardado é o retrato do momento da conciliação. A
+                # tela de divergências lê daqui em vez de recalcular: recalcular
+                # mostraria outra coisa se o pedido mudou depois da decisão.
+                "linhas": resultado.get("linhas") or [],
+                "faturados_sem_pedido": resultado.get("faturados_sem_pedido") or [],
+                "fonte_verdade_fisica": resultado.get("fonte_verdade_fisica"),
+                "aviso": resultado.get("aviso"),
                 "decidida_por": (r["decisao"] or {}).get("usuario_email") if r["decisao"] else None,
             }
         )
@@ -1082,6 +1089,35 @@ def montar_dossie(db: Session, *, pedido_id: UUID | str) -> dict[str, Any]:
     """
     pedido = obter_pedido(db, pedido_id)
 
+    cabecalho = db.execute(
+        text("""
+            SELECT c.nome AS construtora, c.cnpj AS construtora_cnpj, c.slug,
+                   o.nome AS obra, o.cnpj_destinatario, o.modo_aprendizado
+            FROM obras o
+            JOIN construtoras c ON c.id = o.tenant_id
+            WHERE o.id = :o
+        """),
+        {"o": pedido["obra_id"]},
+    ).mappings().first()
+
+    fornecedor = db.execute(
+        text("SELECT razao_social, cnpj, nome_fantasia FROM fornecedores WHERE id = :f"),
+        {"f": pedido["fornecedor_id"]},
+    ).mappings().first()
+
+    recebimentos = db.execute(
+        text("""
+            SELECT r.id, r.tipo, r.status, r.observacoes, r.recebido_em,
+                   count(e.id) AS total_evidencias
+            FROM recebimentos r
+            LEFT JOIN evidencias e ON e.recebimento_id = r.id AND e.removido_em IS NULL
+            WHERE r.obra_id = :o
+            GROUP BY r.id
+            ORDER BY r.recebido_em
+        """),
+        {"o": pedido["obra_id"]},
+    ).mappings().all()
+
     notas = db.execute(
         text("""
             SELECT id, chave_acesso, status_conferencia, resumo_global, itens_resumo,
@@ -1106,13 +1142,56 @@ def montar_dossie(db: Session, *, pedido_id: UUID | str) -> dict[str, Any]:
 
     conciliacoes = db.execute(
         text("""
-            SELECT id, severidade_tecnica, status, decisao, criado_em
+            SELECT id, severidade_tecnica, status, decisao, criado_em, resultado
             FROM conciliacoes WHERE pedido_id = :p ORDER BY criado_em DESC
         """),
         {"p": str(pedido_id)},
     ).mappings().all()
 
     return {
+        # Identificador e horário de geração: quem recebe o dossiê precisa saber
+        # de qual retrato ele fala, porque a conciliação pode mudar amanhã.
+        "id": f"dossie-{pedido_id}",
+        "gerado_em": datetime.now(timezone.utc).isoformat(),
+        "construtora": (
+            {
+                "nome": cabecalho["construtora"],
+                "cnpj": cabecalho["construtora_cnpj"],
+                "slug": cabecalho["slug"],
+            }
+            if cabecalho
+            else None
+        ),
+        "obra": (
+            {
+                "id": str(pedido["obra_id"]),
+                "nome": cabecalho["obra"],
+                "cnpj_destinatario": cabecalho["cnpj_destinatario"],
+                "modo_aprendizado": bool(cabecalho["modo_aprendizado"]),
+            }
+            if cabecalho
+            else None
+        ),
+        "fornecedor": (
+            {
+                "razao_social": fornecedor["razao_social"],
+                "cnpj": fornecedor["cnpj"],
+                "nome_fantasia": fornecedor["nome_fantasia"],
+            }
+            if fornecedor
+            else None
+        ),
+        "recebimentos": [
+            {
+                "id": str(r["id"]),
+                "tipo": r["tipo"],
+                "status": r["status"],
+                "observacoes": r["observacoes"],
+                "recebido_em": r["recebido_em"].isoformat(),
+                "total_evidencias": r["total_evidencias"],
+            }
+            for r in recebimentos
+        ],
         "pedido": pedido,
         "nfe": [
             {
@@ -1149,9 +1228,14 @@ def montar_dossie(db: Session, *, pedido_id: UUID | str) -> dict[str, Any]:
                 "status": c["status"],
                 "decisao": c["decisao"],
                 "criado_em": c["criado_em"].isoformat(),
+                # Só o que ficou sem correspondência entra no dossiê: a lista
+                # inteira de linhas já pode ser reimpressa por conciliação nova,
+                # mas a cobrança órfã é o achado que alguém precisa assinar.
+                "faturados_sem_pedido": (c["resultado"] or {}).get("faturados_sem_pedido") or [],
             }
             for c in conciliacoes
         ],
+        "total_nfe": len(notas),
         "total_evidencias": len(evidencias),
         "total_conciliacoes": len(conciliacoes),
         "ressalva": (

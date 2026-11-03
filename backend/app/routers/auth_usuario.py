@@ -11,6 +11,7 @@ import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, Field
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.auth_usuario import (
@@ -19,11 +20,13 @@ from app.auth_usuario import (
     CredenciaisInvalidas,
     SessaoAtual,
     TenantAmbiguo,
+    abrir_contexto,
     abrir_sessao,
     autenticar,
     revogar,
     validade_sessao_segundos,
 )
+from app.autorizacao import acoes_permitidas
 from app.db import get_db
 from app.deps import sessao_atual
 from app.limite_tentativas import chave_email, chave_ip, limite
@@ -153,4 +156,49 @@ def get_eu(sessao: SessaoAtual = Depends(sessao_atual)) -> dict[str, object]:
         "tenant_id": str(sessao.tenant_id),
         "papel_global": sessao.papel_global,
         "expira_em": sessao.expira_em.isoformat(),
+    }
+
+
+@router.get("/obras")
+def get_minhas_obras(
+    request: Request,
+    db: Session = Depends(get_db),
+) -> dict[str, object]:
+    """
+    Obras em que a pessoa tem vínculo, com o papel e as ações permitidas nela.
+
+    Serve a uma coisa só: o celular não precisa adivinhar o que mostrar. Quem não
+    tem vínculo com a obra nem vê a obra na lista — e a permissão efetiva continua
+    sendo a interseção dos dois papéis, calculada aqui, no servidor.
+
+    O cliente usa isso para esconder botão; o servidor usa a mesma matriz para
+    autorizar. Esconder não é autorizar.
+    """
+    sessao = sessao_atual(request, db)
+    abrir_contexto(db, sessao)
+
+    vinculos = db.execute(
+        text("""
+            SELECT o.id, o.nome, o.modo_aprendizado, ou.papel
+            FROM obras o
+            JOIN obra_usuarios ou ON ou.obra_id = o.id AND ou.tenant_id = o.tenant_id
+            WHERE ou.usuario_id = :u
+            ORDER BY o.nome
+        """),
+        {"u": str(sessao.usuario_id)},
+    ).mappings().all()
+
+    return {
+        "itens": [
+            {
+                "id": str(v["id"]),
+                "nome": v["nome"],
+                "modo_aprendizado": v["modo_aprendizado"],
+                "papel_na_obra": v["papel"],
+                "acoes": acoes_permitidas(
+                    papel_global=sessao.papel_global, papel_obra=v["papel"]
+                ),
+            }
+            for v in vinculos
+        ]
     }

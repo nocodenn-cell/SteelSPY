@@ -477,6 +477,108 @@ def test_dossie_exige_papel_de_exportacao(
 
 
 # ---------------------------------------------------------------------------
+# Dossiê em PDF
+# ---------------------------------------------------------------------------
+
+
+def test_dossie_pdf_devolve_pdf_com_identificador(
+    cliente: Any, equipe: dict[str, Any], storage: Any, sql_owner: Any
+) -> None:
+    csrf = _login(cliente, equipe["emails"]["eng"])
+    cnpj = f"{uuid.uuid4().int % 10**14:014d}"
+    pedido = _pedido_conciliavel(cliente, equipe, csrf, cnpj)
+    nfe = _nfe_com_itens(
+        sql_owner, equipe,
+        [{"bitola_mm": 10.0, "quantidade": 100.0, "unidade": "M", "marca": "GERDAU"}], cnpj,
+    )
+    _post(cliente, f"/pedidos/{pedido['id']}/vincular-nfe", {"nfe_log_id": str(nfe)}, csrf)
+    _post(cliente, f"/pedidos/{pedido['id']}/conciliar", {"nfe_log_id": str(nfe)}, csrf)
+
+    r = cliente.get(f"/pedidos/{pedido['id']}/dossie.pdf")
+    assert r.status_code == 200, r.text
+    assert r.headers["content-type"] == "application/pdf"
+    assert r.content[:4] == b"%PDF", "resposta não é um PDF"
+    assert len(r.content) > 2000
+    assert r.headers["x-dossie-id"] == f"dossie-{pedido['id']}"
+    assert "no-store" in r.headers["cache-control"]
+
+
+def test_dossie_pdf_com_evidencia_e_decisao_humana(
+    cliente: Any, equipe: dict[str, Any], storage: Any, sql_owner: Any
+) -> None:
+    """O PDF precisa aguentar o caso completo: divergência, foto e assinatura."""
+    csrf = _login(cliente, equipe["emails"]["eng"])
+    cnpj = f"{uuid.uuid4().int % 10**14:014d}"
+    pedido = _pedido_conciliavel(cliente, equipe, csrf, cnpj)
+    nfe = _nfe_com_itens(
+        sql_owner, equipe,
+        [{"n_item": 1, "bitola_mm": 12.0, "quantidade": 50.0, "unidade": "M", "marca": "OUTRA"}],
+        cnpj,
+    )
+    _post(cliente, f"/pedidos/{pedido['id']}/vincular-nfe", {"nfe_log_id": str(nfe)}, csrf)
+    conc = _post(cliente, f"/pedidos/{pedido['id']}/conciliar", {"nfe_log_id": str(nfe)}, csrf).json()
+
+    buf = io.BytesIO()
+    Image.new("RGB", (40, 40), (21, 21, 21)).save(buf, format="PNG")
+    rec = _post(cliente, f"/obras/{equipe['obra_a']}/recebimentos", {}, csrf).json()
+    upload = cliente.post(
+        f"/obras/{equipe['obra_a']}/evidencias",
+        files={"arquivo": ("carga.png", buf.getvalue(), "image/png")},
+        data={"tipo": "material", "recebimento_id": rec["id"]},
+        headers={"X-CSRF-Token": csrf},
+    )
+    assert upload.status_code == 201, upload.text
+
+    _post(
+        cliente, f"/conciliacoes/{conc['id']}/decisao",
+        {"decisao": "aceita", "justificativa": "material aceito apos analise dimensional no portao"},
+        csrf,
+    )
+
+    r = cliente.get(f"/pedidos/{pedido['id']}/dossie.pdf")
+    assert r.status_code == 200, r.text
+    assert r.content[:4] == b"%PDF"
+
+
+def test_dossie_pdf_exige_exportar_dossie(
+    cliente: Any, equipe: dict[str, Any], storage: Any
+) -> None:
+    csrf = _login(cliente, equipe["emails"]["eng"])
+    cnpj = f"{uuid.uuid4().int % 10**14:014d}"
+    pedido = _pedido_conciliavel(cliente, equipe, csrf, cnpj)
+
+    cliente.cookies.clear()
+    _login(cliente, equipe["emails"]["fiscal"])
+    assert cliente.get(f"/pedidos/{pedido['id']}/dossie.pdf").status_code == 403
+
+
+def test_dossie_pdf_de_outra_construtora_responde_404(
+    cliente: Any, equipe: dict[str, Any], storage: Any
+) -> None:
+    csrf = _login(cliente, equipe["emails"]["eng"])
+    cnpj = f"{uuid.uuid4().int % 10**14:014d}"
+    pedido = _pedido_conciliavel(cliente, equipe, csrf, cnpj)
+
+    cliente.cookies.clear()
+    _login(cliente, equipe["emails"]["admin_b"])
+    # 404 e nao 403: confirmar a existência do id já seria informação.
+    assert cliente.get(f"/pedidos/{pedido['id']}/dossie.pdf").status_code == 404
+
+
+def test_dossie_pdf_sem_sessao_responde_401(cliente: Any) -> None:
+    assert cliente.get(f"/pedidos/{uuid.uuid4()}/dossie.pdf").status_code == 401
+
+
+def test_gerar_dossie_pdf_tolera_dossie_incompleto() -> None:
+    """Dossiê é documento factual: falta de dado não pode derrubar a geração."""
+    from app.services.dossie_pdf import gerar_dossie_pdf_bytes, nome_arquivo_dossie
+
+    bytes_ = gerar_dossie_pdf_bytes({"pedido": {"numero": "PC-X"}, "conciliacoes": []})
+    assert bytes_[:4] == b"%PDF"
+    assert nome_arquivo_dossie({"pedido": {"numero": "PC/001"}}) == "dossie_PC-001.pdf"
+
+
+# ---------------------------------------------------------------------------
 # Decisão humana e falha de banco
 # ---------------------------------------------------------------------------
 
