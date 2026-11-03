@@ -10,13 +10,14 @@ from datetime import datetime, timezone
 from typing import Any, Literal
 from uuid import UUID
 
-from fastapi import APIRouter, BackgroundTasks, Cookie, Depends, Header, HTTPException, Response
+from fastapi import APIRouter, BackgroundTasks, Cookie, Depends, Header, HTTPException, Request, Response
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, Field, field_validator, model_validator
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.auth_obra import verificar_acesso_obra
+from app.deps import autorizar_na_obra, exigir_csrf, sessao_atual, sessao_opcional
 from app.pwa_session import SESSION_COOKIE_NAME
 from app.db import get_db
 from app.domain.conferente import (
@@ -34,7 +35,12 @@ from app.services.laudo_storage import SUPABASE_URL as LAUDO_SUPABASE_URL, envia
 from app.services.mensagem_fiscal import gerar_mensagem_fiscal
 from app.services.nfe_io import buscar_xml_ou_json_por_chave
 from app.services.whatsapp_evolution import notificar_mensagem_fiscal, notificar_xml_pendente
-from app.tenant import resolver_tenant_de_nfe_log
+from app.auth_usuario import abrir_contexto
+from app.tenant import (
+    consultar_contexto_nfe_log,
+    consultar_obra,
+    resolver_tenant_de_nfe_log,
+)
 from app.utils.url_seguras import URLNaoPermitidaError, url_redirect_laudo_confiavel, validar_url_imagem_publica
 
 logger = logging.getLogger(__name__)
@@ -154,6 +160,7 @@ def _resposta_pendente_rica(
 
 @router.post("/conferir")
 def post_conferir(
+    request: Request,
     body: ConferirBody,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
@@ -165,8 +172,26 @@ def post_conferir(
     except ChaveNFeInvalidaError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
 
-    obra = carregar_obra_por_id(db, body.obra_id)
-    verificar_acesso_obra(obra, x_api_key=x_api_key, pwa_session_cookie=pwa_session_cookie)
+    # Dois caminhos de acesso, com garantias diferentes e explícitas:
+    #
+    # 1) usuário autenticado (cookie de sessão) — tenant vem da sessão, papel vem
+    #    do banco, e o CSRF é obrigatório porque a credencial é ambiente;
+    # 2) legado por obra (X-API-KEY ou cookie antigo) — escopo restrito à obra,
+    #    sem identidade de usuário e sem acesso a operações privilegiadas.
+    sessao = sessao_opcional(request, db)
+
+    if sessao is not None:
+        exigir_csrf(request, sessao)
+        candidata = consultar_obra(db, body.obra_id)
+        if candidata is None or str(candidata["tenant_id"]) != str(sessao.tenant_id):
+            # 404 e não 403: não se confirma a existência de obra de outra empresa.
+            raise HTTPException(status_code=404, detail="obra não encontrada")
+        autorizar_na_obra(db, sessao, body.obra_id, "criar_recebimento")
+        abrir_contexto(db, sessao)
+        obra = carregar_obra_por_id(db, body.obra_id)
+    else:
+        obra = carregar_obra_por_id(db, body.obra_id)
+        verificar_acesso_obra(obra, x_api_key=x_api_key, pwa_session_cookie=pwa_session_cookie)
 
     _wd_raw = obra.get("whatsapp_destino")
     whatsapp_destino_obra = str(_wd_raw).strip() if _wd_raw is not None else None
@@ -299,6 +324,7 @@ def post_conferir(
 @router.get("/conferir/{nfe_log_id}/laudo.pdf", response_model=None)
 def get_laudo_pdf(
     nfe_log_id: UUID,
+    request: Request,
     db: Session = Depends(get_db),
     x_api_key: str | None = Header(None, alias="X-API-KEY"),
     pwa_session_cookie: str | None = Cookie(None, alias=SESSION_COOKIE_NAME),
@@ -309,9 +335,17 @@ def get_laudo_pdf(
     Caso contrário gera o PDF, tenta enviar ao Storage e grava a URL; se o upload falhar,
     devolve o arquivo inline.
     """
+    sessao = sessao_opcional(request, db)
+
     # Abre o contexto de tenant antes de qualquer consulta: sem ele o RLS
     # esconde `obras` e o JOIN abaixo voltaria vazio.
-    if resolver_tenant_de_nfe_log(db, nfe_log_id) is None:
+    if sessao is not None:
+        ctx = consultar_contexto_nfe_log(db, nfe_log_id)
+        if ctx is None or str(ctx["tenant_id"]) != str(sessao.tenant_id):
+            raise HTTPException(status_code=404, detail="nfe_log não encontrado")
+        autorizar_na_obra(db, sessao, ctx["obra_id"], "exportar_dossie")
+        abrir_contexto(db, sessao)
+    elif resolver_tenant_de_nfe_log(db, nfe_log_id) is None:
         raise HTTPException(status_code=404, detail="nfe_log não encontrado")
 
     row = db.execute(
@@ -329,11 +363,12 @@ def get_laudo_pdf(
     if row is None:
         raise HTTPException(status_code=404, detail="nfe_log não encontrado")
 
-    verificar_acesso_obra(
-        {"id": row["obra_id"], "api_key": row.get("api_key")},
-        x_api_key=x_api_key,
-        pwa_session_cookie=pwa_session_cookie,
-    )
+    if sessao is None:
+        verificar_acesso_obra(
+            {"id": row["obra_id"], "api_key": row.get("api_key")},
+            x_api_key=x_api_key,
+            pwa_session_cookie=pwa_session_cookie,
+        )
 
     if row["status_conferencia"] == StatusConferencia.PENDENTE.value or row["xml_data"] is None:
         raise HTTPException(
@@ -389,6 +424,7 @@ def get_laudo_pdf(
 @router.get("/conferir/{nfe_log_id}/divergencias.pdf")
 def get_divergencias_pdf(
     nfe_log_id: UUID,
+    request: Request,
     db: Session = Depends(get_db),
     x_api_key: str | None = Header(None, alias="X-API-KEY"),
     pwa_session_cookie: str | None = Cookie(None, alias=SESSION_COOKIE_NAME),
@@ -396,8 +432,16 @@ def get_divergencias_pdf(
     """
     PDF detalhado por linha (nfe_itens): divergências e mensagens do conferente.
     """
+    sessao = sessao_opcional(request, db)
+
     # Contexto de tenant antes da consulta (o RLS filtra `obras` no JOIN).
-    if resolver_tenant_de_nfe_log(db, nfe_log_id) is None:
+    if sessao is not None:
+        ctx = consultar_contexto_nfe_log(db, nfe_log_id)
+        if ctx is None or str(ctx["tenant_id"]) != str(sessao.tenant_id):
+            raise HTTPException(status_code=404, detail="nfe_log não encontrado")
+        autorizar_na_obra(db, sessao, ctx["obra_id"], "exportar_dossie")
+        abrir_contexto(db, sessao)
+    elif resolver_tenant_de_nfe_log(db, nfe_log_id) is None:
         raise HTTPException(status_code=404, detail="nfe_log não encontrado")
 
     row = db.execute(
@@ -414,11 +458,12 @@ def get_divergencias_pdf(
     if row is None:
         raise HTTPException(status_code=404, detail="nfe_log não encontrado")
 
-    verificar_acesso_obra(
-        {"id": row["obra_id"], "api_key": row.get("api_key")},
-        x_api_key=x_api_key,
-        pwa_session_cookie=pwa_session_cookie,
-    )
+    if sessao is None:
+        verificar_acesso_obra(
+            {"id": row["obra_id"], "api_key": row.get("api_key")},
+            x_api_key=x_api_key,
+            pwa_session_cookie=pwa_session_cookie,
+        )
 
     if row["status_conferencia"] == StatusConferencia.PENDENTE.value:
         raise HTTPException(
@@ -467,34 +512,48 @@ def get_divergencias_pdf(
 def post_override(
     nfe_log_id: UUID,
     body: OverrideBody,
+    request: Request,
     db: Session = Depends(get_db),
-    x_api_key: str | None = Header(None, alias="X-API-KEY"),
-    pwa_session_cookie: str | None = Cookie(None, alias=SESSION_COOKIE_NAME),
 ) -> dict[str, Any]:
-    # Contexto de tenant antes do SELECT ... FOR UPDATE (o JOIN em `obras` é
-    # filtrado por RLS e precisaria devolver a linha).
-    if resolver_tenant_de_nfe_log(db, nfe_log_id) is None:
+    """
+    Aceite humano de uma divergência VERMELHA.
+
+    Exige identidade de usuário verificável: a chave de obra (legado) NÃO basta,
+    porque aqui se decide aceitar material não conforme. O `usuario_id` gravado
+    no histórico vem sempre da sessão — nunca do corpo da requisição.
+    """
+    sessao = sessao_atual(request, db)
+    exigir_csrf(request, sessao)
+
+    ctx = consultar_contexto_nfe_log(db, nfe_log_id)
+    if ctx is None or str(ctx["tenant_id"]) != str(sessao.tenant_id):
         raise HTTPException(status_code=404, detail="nfe_log não encontrado")
 
+    autorizar_na_obra(db, sessao, ctx["obra_id"], "override")
+    abrir_contexto(db, sessao)
+
+    if body.usuario_id and body.usuario_id != str(sessao.usuario_id):
+        raise HTTPException(
+            status_code=422,
+            detail="usuario_id não é aceito no corpo: a identidade vem da sessão autenticada.",
+        )
+
+    # Contexto de tenant antes do SELECT ... FOR UPDATE (o JOIN em `obras` é
+    # filtrado por RLS e precisaria devolver a linha).
     row = db.execute(
         text("""
             SELECT n.id, n.obra_id, n.status_conferencia, n.override_info, o.api_key
             FROM nfe_logs n
             JOIN obras o ON o.id = n.obra_id
             WHERE n.id = :id
-            FOR UPDATE OF nfe_logs
+            -- FOR UPDATE exige o ALIAS da tabela (n), não o nome (nfe_logs).
+            FOR UPDATE OF n
         """),
         {"id": str(nfe_log_id)},
     ).mappings().first()
 
     if row is None:
         raise HTTPException(status_code=404, detail="nfe_log não encontrado")
-
-    verificar_acesso_obra(
-        {"id": row["obra_id"], "api_key": row.get("api_key")},
-        x_api_key=x_api_key,
-        pwa_session_cookie=pwa_session_cookie,
-    )
 
     if row["status_conferencia"] != StatusConferencia.VERMELHO.value:
         raise HTTPException(
@@ -506,7 +565,9 @@ def post_override(
     historico = list(anterior.get("historico", []))
     entrada = {
         "justificativa": body.justificativa,
-        "usuario_id": body.usuario_id,
+        "usuario_id": str(sessao.usuario_id),
+        "usuario_email": sessao.email,
+        "papel_global": sessao.papel_global,
         "em": datetime.now(timezone.utc).isoformat(),
         "status_anterior": row["status_conferencia"],
         "status_novo": StatusConferencia.VERDE.value,
