@@ -49,6 +49,30 @@ def _cnpj(c):
     return f"{d[:2]}.{d[2:5]}.{d[5:8]}/{d[8:12]}-{d[12:]}"
 
 
+def _linha_nota(n: dict[str, Any]) -> str:
+    """
+    Cabeçalho da NF-e no dossiê.
+
+    A chave de 44 dígitos vai inteira: abreviá-la impediria conferir o documento
+    contra a NF-e original, e o dossiê existe justamente para essa conferência.
+    """
+    chave = str(n.get("chave_acesso") or "—")
+    return f"Chave {chave} — {_fmt_data(n.get('processado_em'))}"
+
+
+def _faturados_sem_pedido_atual(conciliacoes: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """
+    Itens cobrados que seguem sem linha no pedido.
+
+    `conciliacoes` vem em `criado_em DESC`, então o estado atual é o da primeira.
+    Somar as anteriores repetiria item que já foi correlacionado e contradiria a
+    decisão humana registrada logo acima no documento.
+    """
+    if not conciliacoes:
+        return []
+    return list(conciliacoes[0].get("faturados_sem_pedido") or [])
+
+
 def _secao(pdf: FPDF, font: str, numero: str, titulo: str) -> None:
     pdf.set_font(font, "B", 11)
     pdf.set_x(pdf.l_margin)
@@ -149,23 +173,24 @@ def gerar_dossie_pdf_bytes(dossie: dict[str, Any]) -> bytes:
     if not notas:
         _texto(pdf, 5, "Nenhuma NF-e vinculada a este pedido.")
     for n in notas:
-        resumo = n.get("resumo_global") or {}
         pdf.set_font(font, "B", 8)
         pdf.set_x(pdf.l_margin)
-        pdf.cell(0, 5, f"Chave …{str(n.get('chave_acesso'))[-8]} — {_fmt_data(n.get('processado_em'))}", ln=1)
+        pdf.cell(0, 5, _linha_nota(n), ln=1)
         pdf.set_font(font, "", 8)
         _texto(
             pdf,
             4,
             f"Conferência: {n.get('status_conferencia') or '—'} · tipo {n.get('tipo') or '—'} · "
-            f"alerta: {resumo.get('alerta') or 'nenhum'}",
+            f"{n.get('resumo_global') or 'sem resumo do motor de conferência'}",
         )
-        for it in (n.get("itens_resumo") or [])[:20]:
+        for it in (n.get("itens") or [])[:20]:
             _texto(
                 pdf,
                 4,
-                f"  item {it.get('n_item')} · {str(it.get('descricao') or '')[:60]} · "
-                f"{_fmt_numero(it.get('quantidade'))} {it.get('unidade') or ''}",
+                f"  item {it.get('item_numero')} · {str(it.get('material_recebido') or '')[:52]} · "
+                f"{_fmt_numero(it.get('quantidade_recebida'))} {it.get('unidade_recebida') or ''}"
+                f" · bitola {_fmt_numero(it.get('bitola_recebida'), 1)} mm · "
+                f"{it.get('marca_recebida') or 'marca não informada'}",
             )
     pdf.ln(3)
 
@@ -191,7 +216,7 @@ def gerar_dossie_pdf_bytes(dossie: dict[str, Any]) -> bytes:
                 pdf,
                 4,
                 f"{_fmt_data(e.get('recebida_em'))} · {e.get('tipo')}/{e.get('origem')} · "
-                f"sha256 {str(e.get('sha256'))[:24]}…"
+                f"sha256 {str(e.get('sha256') or '—')}"
                 + (" · SINAL DE FRAUDE" if e.get("sinalizacao_fraude") else ""),
             )
     pdf.ln(3)
@@ -222,11 +247,7 @@ def gerar_dossie_pdf_bytes(dossie: dict[str, Any]) -> bytes:
     pdf.ln(3)
 
     _secao(pdf, font, "6", "Itens sem correspondência no pedido")
-    sem_pedido = [
-        linha
-        for c in conciliacoes
-        for linha in (c.get("faturados_sem_pedido") or [])
-    ]
+    sem_pedido = _faturados_sem_pedido_atual(conciliacoes)
     if sem_pedido:
         pdf.set_font(font, "", 8)
         for f in sem_pedido[:30]:

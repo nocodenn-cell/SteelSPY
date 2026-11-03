@@ -540,6 +540,54 @@ def test_dossie_pdf_com_evidencia_e_decisao_humana(
     assert r.content[:4] == b"%PDF"
 
 
+def test_dossie_lista_os_itens_faturados_de_verdade(
+    cliente: Any, equipe: dict[str, Any], storage: Any, sql_owner: Any
+) -> None:
+    """
+    A prova do item faturado mora em nfe_itens, não em `itens_resumo`.
+
+    `itens_resumo` é contagem de ok/atenção/crítico e `resumo_global` é texto
+    curto. Um dossiê que imprimisse esses campos como se fossem linhas de nota
+    inventaria item — o erro exatamente oposto ao que este projeto promete não
+    cometer.
+    """
+    csrf = _login(cliente, equipe["emails"]["eng"])
+    cnpj = f"{uuid.uuid4().int % 10**14:014d}"
+    pedido = _pedido_conciliavel(cliente, equipe, csrf, cnpj)
+    nfe = _nfe_com_itens(
+        sql_owner, equipe,
+        [{"n_item": 1, "bitola_mm": 10.0, "quantidade": 1000.0, "unidade": "M", "marca": "GERDAU"}],
+        cnpj,
+    )
+    with sql_owner.begin() as conn:
+        conn.execute(
+            text("""
+                INSERT INTO nfe_itens
+                    (tenant_id, nfe_log_id, item_numero, material_recebido, bitola_recebida,
+                     marca_recebida, quantidade_recebida, unidade_recebida, status_item)
+                VALUES
+                    (:t, :n, 1, 'VERGALHAO CA-50 10MM', 10.0, 'GERDAU', 1000.0, 'M', 'VERDE')
+            """),
+            {"t": equipe["tenant_a"], "n": str(nfe)},
+        )
+        conn.execute(
+            text("UPDATE nfe_logs SET resumo_global = :r WHERE id = :n"),
+            {"r": "1 item · 0 com atenção · 0 crítico", "n": str(nfe)},
+        )
+
+    _post(cliente, f"/pedidos/{pedido['id']}/vincular-nfe", {"nfe_log_id": str(nfe)}, csrf)
+    dossie = cliente.get(f"/pedidos/{pedido['id']}/dossie").json()
+
+    nota = dossie["nfe"][0]
+    assert nota["resumo_global"] == "1 item · 0 com atenção · 0 crítico"
+    assert [i["item_numero"] for i in nota["itens"]] == [1]
+    assert nota["itens"][0]["material_recebido"] == "VERGALHAO CA-50 10MM"
+
+    r = cliente.get(f"/pedidos/{pedido['id']}/dossie.pdf")
+    assert r.status_code == 200, r.text
+    assert r.content[:4] == b"%PDF"
+
+
 def test_dossie_pdf_exige_exportar_dossie(
     cliente: Any, equipe: dict[str, Any], storage: Any
 ) -> None:

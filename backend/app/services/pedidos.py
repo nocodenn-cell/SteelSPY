@@ -1120,12 +1120,30 @@ def montar_dossie(db: Session, *, pedido_id: UUID | str) -> dict[str, Any]:
 
     notas = db.execute(
         text("""
-            SELECT id, chave_acesso, status_conferencia, resumo_global, itens_resumo,
+            SELECT id, chave_acesso, status_conferencia, resumo_global,
                    processado_em, tipo
             FROM nfe_logs WHERE pedido_id = :p ORDER BY processado_em
         """),
         {"p": str(pedido_id)},
     ).mappings().all()
+
+    # Itens faturados vêm de nfe_itens, linha por linha. `itens_resumo` é outra
+    # coisa (contagem de ok/atenção/crítico da conferência) e não serve de prova.
+    itens_faturados: dict[str, list[dict[str, Any]]] = {}
+    for nota in notas:
+        itens_faturados[str(nota["id"])] = [
+            dict(r)
+            for r in db.execute(
+                text("""
+                    SELECT item_numero, material_recebido, bitola_recebida,
+                           marca_recebida, quantidade_recebida, unidade_recebida, status_item
+                    FROM nfe_itens
+                    WHERE nfe_log_id = :l
+                    ORDER BY item_numero
+                """),
+                {"l": str(nota["id"])},
+            ).mappings().all()
+        ]
 
     evidencias = db.execute(
         text("""
@@ -1199,7 +1217,7 @@ def montar_dossie(db: Session, *, pedido_id: UUID | str) -> dict[str, Any]:
                 "chave_acesso": n["chave_acesso"],
                 "status_conferencia": n["status_conferencia"],
                 "resumo_global": n["resumo_global"],
-                "itens_resumo": n["itens_resumo"],
+                "itens": itens_faturados[str(n["id"])],
                 "processado_em": n["processado_em"].isoformat() if n["processado_em"] else None,
                 "tipo": n["tipo"],
             }
