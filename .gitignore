@@ -102,3 +102,6 @@ desktop.ini
 .vscode/
 *.sublime-project
 *.sublime-workspace
+
+# --- Raspagem local: servidores de dev, PDFs e fotos de teste ---------------
+.devtmp/
