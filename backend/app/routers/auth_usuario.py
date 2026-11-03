@@ -26,6 +26,7 @@ from app.auth_usuario import (
 )
 from app.db import get_db
 from app.deps import sessao_atual
+from app.limite_tentativas import chave_email, chave_ip, limite
 from app.pwa_session import cookie_samesite, cookie_secure_flag
 from app.seguranca import TokenInvalido, ler_token_sessao
 
@@ -62,21 +63,46 @@ def post_login(
     response: Response,
     db: Session = Depends(get_db),
 ) -> dict[str, object]:
+    ip = request.client.host if request.client else None
+
+    # Duas chaves independentes: alvo (e-mail) e origem (IP). Basta uma estar
+    # bloqueada para recusar — ataque direcionado e varredura são riscos
+    # diferentes e merecem contadores diferentes.
+    chaves = (chave_email(body.email), chave_ip(ip))
+    for chave in chaves:
+        bloqueado, restante = limite().bloqueado(chave)
+        if bloqueado:
+            logger.warning("login bloqueado por excesso de tentativas: %s", chave.split(":")[0])
+            raise HTTPException(
+                status_code=429,
+                detail="Muitas tentativas de login. Aguarde e tente novamente.",
+                headers={"Retry-After": str(restante)},
+            )
+
     try:
         sessao = autenticar(
             db, email=body.email, senha=body.senha, tenant_slug=body.tenant
         )
     except TenantAmbiguo as exc:
+        # Conta como falha de propósito: responder diferente de "senha errada"
+        # já revela que o e-mail existe.
+        for chave in chaves:
+            limite().registrar_falha(chave)
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except CredenciaisInvalidas as exc:
-        # Mesma resposta para e-mail inexistente e senha errada.
+        for chave in chaves:
+            limite().registrar_falha(chave)
         logger.warning("tentativa de login falhou: email=%s", body.email[:64])
         raise HTTPException(status_code=401, detail="Credenciais inválidas.") from exc
+
+    # Sucesso zera o histórico das duas chaves.
+    for chave in chaves:
+        limite().limpar(chave)
 
     token, csrf = abrir_sessao(
         db,
         sessao,
-        ip=request.client.host if request.client else None,
+        ip=ip,
         user_agent=request.headers.get("user-agent"),
     )
     db.commit()

@@ -373,3 +373,69 @@ def _marcar_vermelho(sql_owner: Any, nfe_log_id: uuid.UUID) -> None:
             text("UPDATE nfe_logs SET status_conferencia = 'VERMELHO' WHERE id = :id"),
             {"id": nfe_log_id},
         )
+
+
+# ---------------------------------------------------------------------------
+# Rate limit de login
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(autouse=True)
+def _limite_zerado() -> Any:
+    """O contador é do processo: precisa começar limpo em cada teste."""
+    from app.limite_tentativas import limite
+
+    limite().resetar()
+    yield
+    limite().resetar()
+
+
+def test_login_bloqueia_apos_o_limite_de_falhas(
+    cliente: Any, equipe: dict[str, Any], monkeypatch: Any
+) -> None:
+    monkeypatch.setenv("AUTH_LOGIN_MAX_FALHAS", "3")
+    email = equipe["emails"]["fiscal_a"]
+
+    for _ in range(3):
+        assert _login(cliente, email, senha="errada").status_code == 401
+
+    bloqueado = _login(cliente, email, senha="errada")
+    assert bloqueado.status_code == 429
+    assert int(bloqueado.headers["Retry-After"]) > 0
+
+    # E mesmo a senha correta é recusada enquanto durar o bloqueio.
+    assert _login(cliente, email).status_code == 429
+
+
+def test_login_com_sucesso_zera_o_contador(
+    cliente: Any, equipe: dict[str, Any], monkeypatch: Any
+) -> None:
+    monkeypatch.setenv("AUTH_LOGIN_MAX_FALHAS", "3")
+    email = equipe["emails"]["fiscal_a"]
+
+    assert _login(cliente, email, senha="errada").status_code == 401
+    assert _login(cliente, email, senha="errada").status_code == 401
+
+    # Sucesso limpa o histórico das duas chaves (e-mail e IP).
+    assert _login(cliente, email).status_code == 200
+
+    # Duas falhas novas não devem encontrar o contador anterior.
+    assert _login(cliente, email, senha="errada").status_code == 401
+    assert _login(cliente, email, senha="errada").status_code == 401
+
+
+def test_bloqueio_por_ip_afeta_outro_email(
+    cliente: Any, equipe: dict[str, Any], monkeypatch: Any
+) -> None:
+    """
+    Varredura de contas: atacar vários e-mails do mesmo lugar precisa custar
+    caro. A chave por IP é o que impede trocar de alvo e continuar.
+    """
+    monkeypatch.setenv("AUTH_LOGIN_MAX_FALHAS", "2")
+    monkeypatch.setenv("AUTH_LOGIN_JANELA_SEGUNDOS", "60")
+
+    assert _login(cliente, equipe["emails"]["fiscal_a"], senha="errada").status_code == 401
+    assert _login(cliente, equipe["emails"]["fiscal_a"], senha="errada").status_code == 401
+
+    # Conta diferente, mesmo IP (TestClient usa o mesmo host).
+    assert _login(cliente, equipe["emails"]["eng_a"]).status_code == 429
