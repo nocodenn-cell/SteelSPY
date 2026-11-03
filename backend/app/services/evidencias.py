@@ -165,6 +165,9 @@ def _serializar(linha: Any) -> dict[str, Any]:
         "tipo": linha["tipo"],
         "capturada_em": linha["capturada_em"].isoformat() if linha["capturada_em"] else None,
         "recebida_em": linha["recebida_em"].isoformat(),
+        # Sinal antifraude: a imagem já existia na obra em outro contexto.
+        "reutilizada_de": str(linha["reutilizada_de"]) if linha["reutilizada_de"] else None,
+        "sinalizacao_fraude": bool(linha["sinalizacao_fraude"]),
     }
 
 
@@ -210,12 +213,23 @@ def criar_evidencia(
     tipo: str,
     capturada_em: datetime | None,
     usuario_id: UUID | None,
+    idempotency_key: str | None = None,
 ) -> tuple[dict[str, Any], bool]:
     """
     Grava a evidência. Devolve `(evidencia, criada)`.
 
-    `criada=False` significa reenvio idêntico — a resposta é 200, não 409.
-    Duplicata não é erro do cliente; é a rede/usuário tentando de novo.
+    Três identidades, três mecanismos — e é isso que evita confundir "retry"
+    com "reuso indevido":
+
+    - `idempotency_key` identifica a **operação** de upload. Mesma chave, mesma
+      resposta, sem gravar de novo;
+    - `sha256` identifica o **arquivo**. É o que prova que a foto é a mesma;
+    - `(recebimento_id, sha256)` identifica a **prova de um recebimento**.
+
+    A mesma imagem em recebimentos diferentes é permitida — o fiscal pode
+    fotografar o mesmo material duas vezes — mas fica marcada: `reutilizada_de`
+    aponta para a primeira ocorrência e `sinalizacao_fraude` vira verdadeiro.
+    O sistema não bloqueia; ele mostra para quem decide.
     """
     if not conteudo:
         raise ErroEvidencia("Arquivo vazio.", status_code=400)
@@ -226,21 +240,64 @@ def criar_evidencia(
             f"Arquivo acima do limite de {limite // (1024 * 1024)} MB.", status_code=413
         )
 
+    chave_idem = (idempotency_key or "").strip() or None
+    if chave_idem:
+        existente = db.execute(
+            text("""
+                SELECT * FROM evidencias
+                WHERE obra_id = :obra AND idempotency_key = :chave AND removido_em IS NULL
+            """),
+            {"obra": str(obra_id), "chave": chave_idem},
+        ).mappings().first()
+        if existente is not None:
+            logger.info("upload idempotente por chave: evidência %s", existente["id"])
+            return _serializar(existente), False
+
     sha_original = sha256(conteudo)
-
-    existente = db.execute(
-        text("""
-            SELECT * FROM evidencias
-            WHERE obra_id = :obra AND sha256_original = :sha AND removido_em IS NULL
-        """),
-        {"obra": str(obra_id), "sha": sha_original},
-    ).mappings().first()
-    if existente is not None:
-        logger.info("upload idempotente: evidência %s já existe", existente["id"])
-        return _serializar(existente), False
-
     normalizada = normalizar_imagem(conteudo, mime_declarado)
     sha_norm = sha256(normalizada["conteudo"])
+
+    # Mesma prova para o mesmo recebimento: é retry, não erro.
+    if recebimento_id is not None:
+        repetida = db.execute(
+            text("""
+                SELECT * FROM evidencias
+                WHERE recebimento_id = :rec AND sha256 = :sha AND removido_em IS NULL
+            """),
+            {"rec": str(recebimento_id), "sha": sha_norm},
+        ).mappings().first()
+        if repetida is not None:
+            logger.info("upload idempotente no recebimento: evidência %s", repetida["id"])
+            return _serializar(repetida), False
+
+    # Sem recebimento e sem chave de operação: o mesmo arquivo na mesma obra é
+    # retry de rede, não reutilização. Devolve o que já existe.
+    if recebimento_id is None and chave_idem is None:
+        repetida_solta = db.execute(
+            text("""
+                SELECT * FROM evidencias
+                WHERE obra_id = :obra AND sha256 = :sha
+                  AND recebimento_id IS NULL AND removido_em IS NULL
+            """),
+            {"obra": str(obra_id), "sha": sha_norm},
+        ).mappings().first()
+        if repetida_solta is not None:
+            logger.info("upload idempotente (sem recebimento): %s", repetida_solta["id"])
+            return _serializar(repetida_solta), False
+
+    # Reutilização: este conteúdo já existe em outro ponto da obra?
+    primeira = db.execute(
+        text("""
+            SELECT id FROM evidencias
+            WHERE obra_id = :obra AND sha256 = :sha AND removido_em IS NULL
+            ORDER BY recebida_em, id
+            LIMIT 1
+        """),
+        {"obra": str(obra_id), "sha": sha_norm},
+    ).scalar()
+
+    reutilizada_de = str(primeira) if primeira else None
+    sinalizada = primeira is not None
 
     evidencia_id = uuid4()
     chave_original, chave_norm = _chaves(
@@ -272,13 +329,15 @@ def criar_evidencia(
                     sha256_original, sha256,
                     storage_key_original, storage_key,
                     mime_original, mime, bytes_original, bytes,
-                    largura, altura, origem, tipo, capturada_em, criado_por
+                    largura, altura, origem, tipo, capturada_em, criado_por,
+                    idempotency_key, reutilizada_de, sinalizacao_fraude
                 ) VALUES (
                     :id, :tenant, :obra, :rec,
                     :sha_orig, :sha,
                     :key_orig, :key,
                     :mime_orig, :mime, :bytes_orig, :bytes,
-                    :largura, :altura, :origem, :tipo, :capturada, :autor
+                    :largura, :altura, :origem, :tipo, :capturada, :autor,
+                    :chave_idem, :reutilizada_de, :sinalizada
                 )
             """),
             {
@@ -300,6 +359,9 @@ def criar_evidencia(
                 "tipo": tipo,
                 "capturada": capturada_em,
                 "autor": str(usuario_id) if usuario_id else None,
+                "chave_idem": chave_idem,
+                "reutilizada_de": reutilizada_de,
+                "sinalizada": sinalizada,
             },
         )
     except IntegrityError:
@@ -310,13 +372,23 @@ def criar_evidencia(
                 armazenamento.remover(chave)
             except ErroArmazenamento:  # pragma: no cover
                 pass
-        existente = db.execute(
-            text("""
-                SELECT * FROM evidencias
-                WHERE obra_id = :obra AND sha256 = :sha AND removido_em IS NULL
-            """),
-            {"obra": str(obra_id), "sha": sha_norm},
-        ).mappings().first()
+        existente = None
+        if chave_idem:
+            existente = db.execute(
+                text("""
+                    SELECT * FROM evidencias
+                    WHERE obra_id = :obra AND idempotency_key = :chave AND removido_em IS NULL
+                """),
+                {"obra": str(obra_id), "chave": chave_idem},
+            ).mappings().first()
+        if existente is None and recebimento_id is not None:
+            existente = db.execute(
+                text("""
+                    SELECT * FROM evidencias
+                    WHERE recebimento_id = :rec AND sha256 = :sha AND removido_em IS NULL
+                """),
+                {"rec": str(recebimento_id), "sha": sha_norm},
+            ).mappings().first()
         if existente is None:
             raise
         return _serializar(existente), False

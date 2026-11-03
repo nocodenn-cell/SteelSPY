@@ -130,6 +130,7 @@ def post_evidencia(
     origem: str = Form("upload"),
     recebimento_id: str | None = Form(None),
     capturada_em: str | None = Form(None),
+    idempotency_key: str | None = Form(None),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     sessao = sessao_atual(request, db)
@@ -180,6 +181,7 @@ def post_evidencia(
             tipo=tipo,
             capturada_em=capturada,
             usuario_id=sessao.usuario_id,
+            idempotency_key=idempotency_key,
         )
     except svc.ErroEvidencia as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
