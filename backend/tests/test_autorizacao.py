@@ -37,6 +37,10 @@ ESPERADO: dict[tuple[str, str], bool] = {
     ("anexar_evidencia", "engenheiro"): True,
     ("anexar_evidencia", "fiscal"): True,
     ("anexar_evidencia", "auditor"): False,
+    ("ver_evidencia", "admin_tenant"): True,
+    ("ver_evidencia", "engenheiro"): True,
+    ("ver_evidencia", "fiscal"): True,
+    ("ver_evidencia", "auditor"): True,
     ("revisar_contagem", "admin_tenant"): True,
     ("revisar_contagem", "engenheiro"): True,
     ("revisar_contagem", "fiscal"): True,
@@ -60,11 +64,11 @@ ESPERADO: dict[tuple[str, str], bool] = {
 }
 
 
-def test_matriz_tem_36_celulas() -> None:
-    """9 ações × 4 papéis. Se alguém adicionar ação sem papel, o teste avisa."""
-    assert len(ACOES) == 9
+def test_matriz_tem_40_celulas() -> None:
+    """10 ações × 4 papéis. Se alguém adicionar ação sem papel, o teste avisa."""
+    assert len(ACOES) == 10
     assert len(PAPEIS_GLOBAIS) == 4
-    assert len(ESPERADO) == 36
+    assert len(ESPERADO) == 40
     for acao in ACOES:
         for papel in PAPEIS_GLOBAIS:
             assert (acao, papel) in ESPERADO, f"célula ausente na especificação: {acao}/{papel}"
@@ -93,7 +97,7 @@ def test_intersecao_global_e_obra(acao: str) -> None:
 def test_auditor_nao_ganha_escrita_por_ser_admin_em_outra_obra() -> None:
     """admin_tenant global + auditor na obra = somente leitura naquela obra."""
     permitidas = acoes_permitidas(papel_global="admin_tenant", papel_obra="auditor")
-    assert permitidas == ["exportar_dossie"]
+    assert permitidas == ["ver_evidencia", "exportar_dossie"]
 
 
 def test_fiscal_nao_faz_override_nem_retem_pagamento() -> None:
