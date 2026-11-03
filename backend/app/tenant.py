@@ -81,21 +81,41 @@ def aplicar_contexto_na_conexao(connection: Any, tenant_id: UUID | str) -> None:
 # ---------------------------------------------------------------------------
 
 
-def resolver_tenant_de_obra(session: Session, obra_id: UUID | str) -> dict[str, Any] | None:
+def consultar_obra(session: Session, obra_id: UUID | str) -> dict[str, Any] | None:
     """
-    Lê a obra pela função SECURITY DEFINER `auth_lookup_obra` e vemcula a sessão.
+    Lê a obra pela função SECURITY DEFINER **sem** abrir contexto.
 
-    Esta é a única porta que atravessa o RLS: ela recebe um UUID e devolve uma
-    linha. Todo o resto da requisição roda já sob o contexto do tenant.
+    Existe para o caminho autenticado por usuário: primeiro é preciso comparar
+    o tenant da obra com o tenant da sessão e só depois abrir contexto. Abrir
+    antes seria abrir o contexto errado, mesmo sem consultar nada.
     """
     row = session.execute(
         text("SELECT * FROM auth_lookup_obra(:id)"), {"id": str(obra_id)}
     ).mappings().first()
-    if row is None:
+    return dict(row) if row else None
+
+
+def resolver_tenant_de_obra(session: Session, obra_id: UUID | str) -> dict[str, Any] | None:
+    """
+    Lê a obra e vemcula a sessão ao tenant dela.
+
+    Caminho legado (chave de obra / worker): a obra é a fonte do tenant porque
+    não existe usuário autenticado.
+    """
+    dados = consultar_obra(session, obra_id)
+    if dados is None:
         return None
-    dados = dict(row)
     vincular_sessao(session, dados["tenant_id"])
     return dados
+
+
+def consultar_contexto_nfe_log(session: Session, nfe_log_id: UUID | str) -> dict[str, Any] | None:
+    """Descobre obra e tenant de um nfe_log **sem** abrir contexto."""
+    row = session.execute(
+        text("SELECT obra_id, tenant_id FROM auth_lookup_nfe_log_tenant(:id)"),
+        {"id": str(nfe_log_id)},
+    ).mappings().first()
+    return dict(row) if row else None
 
 
 def resolver_tenant_de_nfe_log(session: Session, nfe_log_id: UUID | str) -> UUID | None:
@@ -104,11 +124,8 @@ def resolver_tenant_de_nfe_log(session: Session, nfe_log_id: UUID | str) -> UUID
 
     Retorna None quando o log não existe — o chamador decide o status HTTP.
     """
-    row = session.execute(
-        text("SELECT obra_id, tenant_id FROM auth_lookup_nfe_log_tenant(:id)"),
-        {"id": str(nfe_log_id)},
-    ).mappings().first()
-    if row is None:
+    ctx = consultar_contexto_nfe_log(session, nfe_log_id)
+    if ctx is None:
         return None
-    vincular_sessao(session, row["tenant_id"])
-    return row["tenant_id"]
+    vincular_sessao(session, ctx["tenant_id"])
+    return ctx["tenant_id"]
