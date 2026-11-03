@@ -7,28 +7,40 @@
 
 ## 1. Bloco A — Destravar (fazer agora)
 
-### P-01 · `.gitignore` na raiz + commit inicial
+### P-01 · `.gitignore` na raiz + commit inicial — ✅ **CONCLUÍDO**
 
 | Campo | Valor |
 |-------|-------|
 | Por que | **Zero commits.** Sem ponto de restauração, qualquer alteração é irreversível |
-| O que | Criar `.gitignore` (node_modules, `__pycache__`, `.pytest_cache`, `.venv`, `.env`, `*.pyc`); `git add` do estado atual; commit `chore: baseline congelado (69 testes verdes)` |
-| Esforço | 15 min |
-| Risco | Baixo — não altera código, só cria histórico |
-| Verificação | `git log --oneline` mostra 1 commit; `git status` limpo; `git ls-files pwa/node_modules` **vazio** |
-| Gate | **G-04** — exige autorização |
-| Estado | `BLOQUEADO` |
+| O que | `.gitignore` criado; `git add -A` do estado original; commit inicial |
+| Esforço real | 15 min |
+| Verificação | ✅ `git log` mostra o commit `6668591`; `git status` limpo; **0** arquivos de `node_modules`/`.venv`/`__pycache__` no índice |
+| Resultado | 117 arquivos versionados · commit `6668591d1522f5edb1c94c35bc8c5ea6b9eebd3f` |
+| Estado | `IMPLEMENTADO` + `TESTADO` |
 
-### P-02 · Declarar `tzdata` em `requirements.txt`
+### P-02 · Declarar `tzdata` em `requirements.txt` — ✅ **CONCLUÍDO**
 
 | Campo | Valor |
 |-------|-------|
-| Por que | Suíte não coleta em ambiente limpo (`ZoneInfoNotFoundError`) — **confirmado por execução** |
-| O que | Adicionar `tzdata>=2024.1` ao `requirements.txt` (ou condicional a Windows) |
-| Esforço | 5 min |
-| Verificação | Remover `tzdata` do `.venv`, reinstalar a partir do `requirements.txt`, rodar `pytest` → 69/69 |
-| Gate | **G-05** — exige autorização (mudança de dependência do produto) |
-| Estado | `BLOQUEADO` |
+| Por que | Suíte não coletava em ambiente limpo (`ZoneInfoNotFoundError`) — confirmado por execução |
+| O que | `tzdata>=2024.1` acrescentado ao `requirements.txt`, com comentário de justificativa |
+| Esforço real | 5 min |
+| Verificação | ✅ ambiente limpo do zero, `pip install -r requirements.txt` → `tzdata 2026.6` instalado sem intervenção manual |
+| Resultado | commit `979991e1e01d28546f3d37b5f2ec8feb266dcd67` (1 arquivo, +6 linhas) |
+| Estado | `IMPLEMENTADO` + `TESTADO` |
+
+### P-16 · 🔴 **NOVO — defeito bloqueante**: `app.main` não importa
+
+| Campo | Valor |
+|-------|-------|
+| Descoberto em | verificação de imports da Etapa 4 do Bloco A |
+| Sintoma | `FastAPIError: Invalid args for response field!` ao importar `app.main` |
+| Causa | `app/routers/conferencia.py:298` — `-> Response \| RedirectResponse` em `get_laudo_pdf`; `fastapi 0.162.0` não aceita união de `Response` como response model |
+| Efeito | **A API não sobe.** Invisível para os 69 testes (nenhum importa `app.main`) |
+| Correção proposta | `@router.get(..., response_model=None)` no decorador; revisar `get_divergencias_pdf` (`:378`) |
+| Restrição | É código de produto — **exige autorização** |
+| Esforço | 15 min + 1 teste de fumaça que importe `app.main` |
+| Estado | `BLOQUEADO` (aguarda autorização) |
 
 ### P-03 · Gate mecânico de licenciamento
 
@@ -140,10 +152,32 @@ Dia 11    Reavaliar G-06 e decidir Fase 0
 
 ## 7. Decisão imediata necessária
 
-> **Autorizar P-01 e P-02.** São 20 minutos de trabalho, não alteram código de produto, e são a
-> diferença entre um repositório que pode ser evoluído com segurança e um que não pode.
+> ## ✅ Bloco A concluído — P-01 e P-02 executados
+>
+> O repositório tem histórico (`6668591`) e o projeto roda em ambiente limpo a partir das dependências
+> declaradas (`979991e`). Os dois bloqueios técnicos foram eliminados.
 
-Sem elas:
-- não há como reverter uma alteração da Fase 0;
-- o projeto não roda em máquina limpa;
-- qualquer trabalho futuro fica em cima de areia.
+**Estado do repositório:** `git status` limpo · 2 commits · 117 arquivos versionados.
+
+### A decisão agora é outra: P-16
+
+A verificação de imports da Etapa 4 revelou que **`app.main` não importa** com `fastapi 0.162.0`
+(`app/routers/conferencia.py:298`). A API não sobe. Nenhum teste pega isso porque nenhum teste importa
+`app.main`.
+
+> **Autorizar P-16:** trocar a anotação de retorno de `get_laudo_pdf` por `response_model=None` no
+> decorador e acrescentar **um** teste que faça `import app.main`. São ~15 minutos, é a primeira
+> alteração em código de produto, e fecha o único defeito conhecido que impede o serviço de iniciar.
+
+Sem isso:
+- a Fase 0 não tem como validar nada ponta a ponta (a API não sobe);
+- qualquer trabalho na Fase 1 começaria sobre um serviço que falha no boot;
+- o risco "dependências sem teto" (M5) continua sem tratamento — `fastapi>=0.115.0` aceita qualquer
+  versão futura.
+
+### Observação sobre tetos de versão
+
+O defeito P-16 é a primeira materialização do risco **M5**: `requirements.txt` usa `>=` em todas as
+7 dependências, sem teto. Não recomendo fixar tudo agora (quebra reprodutibilidade por outro lado);
+recomendo **congelar o par conhecido-bom** (`fastapi`, `starlette`, `pydantic`, `fpdf2`) com teto de
+major na próxima decisão, e deixar o resto acompanhar.

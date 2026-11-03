@@ -264,3 +264,105 @@ Registro explícito para evitar conclusão indevida:
 | E6 | Suíte 69/69 verde | TESTADO | executado |
 | E7 | PostgreSQL em container | TESTADO | executado |
 | E8 | Limites do que não foi testado | — | declaração |
+
+---
+
+## E9 — Reprografia em ambiente limpo (Bloco A)
+
+**Estado: TESTADO** · Executado em 2026-11-03
+
+Objetivo: provar que o projeto roda a partir de um ambiente **totalmente novo**, sem instalação manual.
+
+```
+venv resolvido: C:\Naturecode\stellSPY\backend\.venv
+venv removido: True
+python -m venv .venv                      → Python 3.13.15
+pip install -r requirements.txt -r requirements-dev.txt
+                                          → install exit: 0
+pip show tzdata                           → Name: tzdata · Version: 2026.6
+pip freeze                                → 34 pacotes
+```
+
+| Verificação | Comando | Resultado |
+|-------------|---------|-----------|
+| Ambiente limpo criado | `python -m venv .venv` | ✅ |
+| Instalação só do declarado | `pip install -r requirements.txt -r requirements-dev.txt` | ✅ exit 0 |
+| `tzdata` veio do `requirements.txt` | `pip show tzdata` | ✅ 2026.6 — **não** instalado à mão |
+| Timezone | `ZoneInfo("America/Sao_Paulo")` | ✅ `2026-11-03T14:14:29-03:00` |
+| Coleta | `pytest --collect-only -q` | ✅ **69 testes coletados** em 0,95 s |
+| Suíte completa | `pytest -q` | ✅ **69 passed, 24 warnings** em 1,43 s |
+| Imports | importar os 32 módulos de `app/` | ❌ **2 falhas** (ver E10) |
+
+**Conclusão:** o bloqueio de dependência **está resolvido**. O objetivo de §4 da missão do Bloco A
+("reproduzir os 69 testes sem instalação manual") foi atingido.
+
+⚠️ A verificação de imports, exigida na mesma etapa, **revelou um defeito bloqueante** que não estava
+no escopo deste bloco. Ver E10.
+
+---
+
+## E10 — Defeito bloqueante: a aplicação **não inicia**
+
+**Estado: TESTADO — CONFIRMADO** · Defeito novo, não classificado antes
+
+```
+$ python -c "import app.main"
+fastapi.exceptions.FastAPIError: Invalid args for response field!
+Hint: check that starlette.responses.Response | starlette.responses.RedirectResponse
+is a valid Pydantic field type. ...
+disable generating the response model ... with response_model=None.
+```
+
+| Item | Detalhe |
+|------|---------|
+| Origem exata | `app/routers/conferencia.py:298` — `) -> Response \| RedirectResponse:` em `get_laudo_pdf` |
+| Versões | `fastapi 0.162.0` · `starlette 1.10.0` · `pydantic 2.14.2` |
+| Módulos afetados | `app.main` e `app.routers.conferencia` (2 de 32) |
+| Módulos saudáveis | `app.routers.auth_pwa` importa normalmente (não tem união de `Response`) |
+| Efeito | **A API não sobe.** `uvicorn app.main:app` falharia no import |
+| Por que não foi pego antes | Nenhum teste importa `app.main` — a lacuna "zero testes de router" |
+| Causa raiz | `requirements.txt` declara `fastapi>=0.115.0` **sem teto**; o pip resolveu 0.162.0, que passou a validar a anotação de retorno |
+
+**Por que é grave:** o risco **M5** da auditoria ("dependências sem teto") deixou de ser teórico. Ele
+quebrou a aplicação. E o defeito é **invisível para a suíte atual** — 69 testes verdes enquanto o
+serviço não inicia.
+
+**Correção indicada** (não aplicada — proibida neste bloco):
+`@router.get(..., response_model=None)` no decorador de `get_laudo_pdf`, ou trocar a anotação por
+`-> Any`. Vale checar também `get_divergencias_pdf` (`conferencia.py:378`), que hoje não quebra porque
+anota apenas `Response`.
+
+**Classificação:** defeito de severidade **crítica**, fora do escopo do Bloco A, registrado como P-16.
+
+---
+
+## E11 — Estado do Git após o Bloco A
+
+**Estado: TESTADO**
+
+| Item | Valor |
+|------|-------|
+| Commit inicial | `6668591d1522f5edb1c94c35bc8c5ea6b9eebd3f` |
+| Commit da dependência | `979991e1e01d28546f3d37b5f2ec8feb266dcd67` |
+| Arquivos versionados no commit inicial | **117** |
+| `node_modules` / `.venv` / `__pycache__` no índice | **0** |
+| Arquivos `.env` no índice | **0** (só `.env.example`) |
+| Segredos encontrados na varredura | **0** (114 arquivos de texto inspecionados) |
+
+---
+
+## Índice de evidências (atualizado)
+
+| ID | Assunto | Estado | Verificação |
+|----|---------|--------|-------------|
+| E1 | Ambiente de execução (ACL) | TESTADO | executado |
+| E2 | Toolchain | TESTADO | executado |
+| E3 | Controle de versão | TESTADO | executado |
+| E4 | Dependências / venv | TESTADO | executado |
+| E5 | Defeito `tzdata` | TESTADO | executado |
+| E6 | Suíte 69/69 verde | TESTADO | executado |
+| E7 | PostgreSQL em container | TESTADO | executado |
+| E8 | Limites do que não foi testado | — | declaração |
+| **E9** | **Reprodutibilidade em ambiente limpo** | **TESTADO** | executado |
+| **E10** | **App não inicia (FastAPIError)** | **TESTADO — bloqueante** | executado |
+| **E11** | **Estado do Git (2 commits)** | **TESTADO** | executado |
