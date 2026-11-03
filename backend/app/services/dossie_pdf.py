@@ -60,6 +60,25 @@ def _linha_nota(n: dict[str, Any]) -> str:
     return f"Chave {chave} — {_fmt_data(n.get('processado_em'))}"
 
 
+def _linhas_evidencia(e: dict[str, Any]) -> list[str]:
+    """
+    As duas provas da mesma foto, cada uma com seu hash.
+
+    O servidor guarda o arquivo original (com os metadados da câmera) e uma
+    versão normalizada. Citar só o normalizado deixaria quem tem a foto do
+    celular sem como amarrá-la ao dossiê — que existe para isso.
+    """
+    cabecalho = (
+        f"{_fmt_data(e.get('recebida_em'))} · {e.get('tipo')}/{e.get('origem')}"
+        + (" · SINAL DE FRAUDE" if e.get("sinalizacao_fraude") else "")
+    )
+    return [
+        cabecalho,
+        f"     normalizado sha256 {str(e.get('sha256') or '—')}",
+        f"     original    sha256 {str(e.get('sha256_original') or '—')}",
+    ]
+
+
 def _faturados_sem_pedido_atual(conciliacoes: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """
     Itens cobrados que seguem sem linha no pedido.
@@ -238,16 +257,11 @@ def gerar_dossie_pdf_bytes(dossie: dict[str, Any]) -> bytes:
     if evidencias:
         pdf.set_font(font, "B", 8)
         pdf.set_x(pdf.l_margin)
-        pdf.cell(0, 6, "Prova fotográfica (hash do arquivo normalizado):", ln=1)
+        pdf.cell(0, 6, "Prova fotográfica (os dois arquivos guardados, cada um com seu hash):", ln=1)
         pdf.set_font(font, "", 7)
         for e in evidencias[:60]:
-            _texto(
-                pdf,
-                4,
-                f"{_fmt_data(e.get('recebida_em'))} · {e.get('tipo')}/{e.get('origem')} · "
-                f"sha256 {str(e.get('sha256') or '—')}"
-                + (" · SINAL DE FRAUDE" if e.get("sinalizacao_fraude") else ""),
-            )
+            for linha in _linhas_evidencia(e):
+                _texto(pdf, 4, linha)
     pdf.ln(3)
 
     _secao(pdf, font, "5", "Divergências, severidade técnica e decisões")

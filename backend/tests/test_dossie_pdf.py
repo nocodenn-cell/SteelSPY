@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 from app.services.dossie_pdf import (
     _faturados_sem_pedido_atual,
     _linha_nota,
+    _linhas_evidencia,
     gerar_dossie_pdf_bytes,
 )
 
@@ -27,6 +28,30 @@ def test_cabecalho_da_nota_traz_a_chave_inteira():
 
 def test_cabecalho_da_nota_sem_chave_nao_quebra():
     assert _linha_nota({}).startswith("Chave —")
+
+
+def test_evidencia_cita_os_dois_hashes():
+    """
+    A foto original do celular e a versão normalizada são arquivos diferentes.
+    O dossiê que mostra só o normalizado não prova nada para quem segura o
+    original — e é ele que a tela oferece para baixar.
+    """
+    linhas = _linhas_evidencia(
+        {
+            "recebida_em": datetime(2026, 11, 3, 17, 22, tzinfo=timezone.utc),
+            "tipo": "material",
+            "origem": "galeria",
+            "sha256": "a" * 64,
+            "sha256_original": "b" * 64,
+        }
+    )
+    corpo = "\n".join(linhas)
+    assert "a" * 64 in corpo and "b" * 64 in corpo
+    assert "03/11/2026" in corpo
+
+    sem_original = _linhas_evidencia({"sha256": "c" * 64})
+    assert "c" * 64 in "\n".join(sem_original)
+    assert "—" in "\n".join(sem_original), "evidência antiga, sem original, não some do dossiê"
 
 
 def test_itens_sem_pedido_usam_a_conciliacao_mais_recente():
@@ -53,7 +78,8 @@ def test_pdf_de_dois_conciliacoes_e_dois_hashes_sai_inteiro():
         {
             "pedido": {"numero": "PC-1", "status": "aberto"},
             "nfe": [{"chave_acesso": CHAVE, "itens": []}],
-            "evidencias": [{"sha256": "a" * 64, "tipo": "material", "origem": "galeria"}],
+            "evidencias": [{"sha256": "a" * 64, "sha256_original": "b" * 64,
+                            "tipo": "material", "origem": "galeria"}],
             "conciliacoes": [
                 {"status": "aceita", "severidade_tecnica": "VERMELHO",
                  "faturados_sem_pedido": [{"n_item": 3}]},
