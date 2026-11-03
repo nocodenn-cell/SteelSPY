@@ -5,3 +5,9 @@ psycopg2-binary>=2.9.10
 pydantic>=2.10.0
 httpx>=0.28.0
 fpdf2>=2.8.0
+
+# Base IANA de fusos horarios para `zoneinfo` (America/Sao_Paulo, usada em
+# app/services/relatorio_semanal.py). O Windows nao traz a base no sistema e
+# imagens Linux minimas tambem nao; sem este pacote a importacao falha com
+# ZoneInfoNotFoundError e a suite de testes nao coleta. Licenca Apache-2.0.
+tzdata>=2024.1
