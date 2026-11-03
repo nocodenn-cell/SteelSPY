@@ -64,7 +64,11 @@
 | O que | Teto de major para `fastapi`, `pydantic`, `fpdf2`; `starlette` em `constraints.txt` |
 | Por que | Foi a ausência de teto que produziu o P-16 |
 | Risco | Tetos bloqueiam correções de segurança — exige revisão trimestral |
-| Estado | `PLANEJADO` — aguarda aprovação |
+| Estado | ✅ `IMPLEMENTADO` + `TESTADO` |
+
+**Resultado:** `constraints.txt` com 34 pacotes travados; instalação limpa reproduz o baseline com
+0 divergências; `pip check` limpo; 82 testes aprovados. Faixas com teto no minor para `0.x` e no major
+para `>=1.x`. `backend/README.md` documenta o comando oficial.
 
 ### P-03 · Gate mecânico de licenciamento
 

@@ -1,13 +1,29 @@
-fastapi>=0.115.0
-uvicorn[standard]>=0.32.0
-sqlalchemy>=2.0.36
-psycopg2-binary>=2.9.10
-pydantic>=2.10.0
-httpx>=0.28.0
-fpdf2>=2.8.0
+# Dependencias diretas da API stellSPY.
+#
+# Faixas travadas contra o conjunto verificado em backend/constraints.txt.
+# Regra de compatibilidade usada aqui:
+#   - pacotes 0.x  -> a quebra acontece no MINOR. Teto no proximo minor.
+#     (foi exatamente uma subida 0.161 -> 0.162 de fastapi que quebrou a API: P-16)
+#   - pacotes >=1.x -> a quebra acontece no MAJOR. Teto no proximo major.
+#
+# Instalacao reproduzivel (use o constraints):
+#   pip install -r requirements.txt -r requirements-dev.txt -c constraints.txt
+#
+# Subir versao e decisao consciente: alterar constraints.txt, recriar o venv,
+# rodar a suite inteira. Nao basta trocar o numero aqui.
+
+fastapi>=0.162.0,<0.163          # 0.x: teto no minor
+uvicorn[standard]>=0.54.0,<0.55  # 0.x: teto no minor
+sqlalchemy>=2.1.6,<3.0           # 2.x: teto no major
+psycopg2-binary>=2.9.13,<2.10    # 2.9.x: teto no minor
+pydantic>=2.14.2,<3.0            # 2.x: teto no major
+httpx>=0.28.1,<0.29              # 0.x: teto no minor
+fpdf2>=2.9.0,<2.10               # teto no minor: 'ln=' e 'dest=' estao depreciados
+                                 # e 'dest=' sera removido; travar evita quebra silenciosa no PDF
 
 # Base IANA de fusos horarios para `zoneinfo` (America/Sao_Paulo, usada em
 # app/services/relatorio_semanal.py). O Windows nao traz a base no sistema e
 # imagens Linux minimas tambem nao; sem este pacote a importacao falha com
 # ZoneInfoNotFoundError e a suite de testes nao coleta. Licenca Apache-2.0.
+# Sem teto: sao DADOS, nao API — convem atualizar.
 tzdata>=2024.1

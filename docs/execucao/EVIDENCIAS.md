@@ -473,3 +473,99 @@ sqlalchemy.exc.OperationalError → 500
 
 Comportamento **pré-existente**, não introduzido pela correção: não há handler para erro de banco.
 Nos testes é contornado com stub de sessão (404). Registrado como P-17.
+
+---
+
+## E13 — P-18: estabilização de dependências
+
+**Estado: TESTADO** · Executado em 2026-11-03
+
+### E13.1 Estado anterior (baseline)
+
+| Item | Valor |
+|------|-------|
+| HEAD | `8db24e33c9bfa151e95d83772f2c53ea83ff9609` |
+| Commits | 5 |
+| Working tree | limpo |
+| Python | 3.13.15 |
+| Suíte | 82 passed |
+| Dependências diretas | 7 com `>=` e **sem teto** |
+| Arquivo de constraints | **não existia** |
+
+### E13.2 Restrições declaradas pelos pacotes (medido, não presumido)
+
+| Pacote | Declara |
+|--------|---------|
+| fastapi 0.162.0 | `starlette>=0.46.0` · `pydantic>=2.9.0` · `typing-extensions>=4.8.0` · `typing-inspection>=0.4.2` · `annotated-doc>=0.0.2` · **`opentelemetry-api>=1.44.0`** |
+| starlette 1.10.0 | `anyio<5,>=4.0.0` |
+| pydantic 2.14.2 | `pydantic-core==2.50.2` (exato) · `typing-extensions>=4.16.0` |
+| fpdf2 2.9.0 | `Pillow!=9.2.*,>=8.3.2` · `fonttools>=4.34.0` |
+| httpx 0.28.1 | `httpcore==1.*` · `anyio` · `certifi` · `idna` |
+| uvicorn 0.54.0 | `click>=7.0` · `h11>=0.8` |
+
+Dois achados relevantes:
+
+1. **`fastapi` não impõe teto a `starlette`** (`>=0.46.0`, sem máximo). Fixar `starlette` como
+   dependência direta criaria risco de conflito; por isso ela é travada só em `constraints.txt`.
+2. **`fastapi 0.162` traz `opentelemetry-api` como dependência obrigatória** (não é extra). Aumenta a
+   superfície instalada sem que o projeto use telemetria.
+
+### E13.3 Alterações aplicadas
+
+| Arquivo | Mudança |
+|---------|---------|
+| `backend/constraints.txt` | **novo** — 34 pacotes com versões exatas |
+| `backend/requirements.txt` | faixas com teto; comentário com a regra |
+| `backend/requirements-dev.txt` | `pytest>=9.2.0,<10.0`; duplicata de `httpx` removida |
+| `backend/README.md` | **novo** — instalação limpa documentada |
+
+**Nenhuma versão foi trocada. Nenhum pacote foi instalado. Nenhum upgrade.**
+
+### E13.4 Instalação limpa
+
+```
+rm -rf .venv
+python -m venv .venv                       → Python 3.13.15
+pip install --upgrade pip
+pip install -r requirements.txt -r requirements-dev.txt -c constraints.txt
+                                           → exit 0
+pip check                                  → No broken requirements found.
+```
+
+### E13.5 Comparação com o baseline aprovado
+
+```
+constraints=34  instalados=34
+divergentes=0  ausentes=0  extras=0
+```
+
+E o `pip freeze` resultante é **byte a byte idêntico** ao `baseline_freeze.txt` anterior ao P-18 —
+prova de que o travamento não introduziu desvio de versão.
+
+### E13.6 Regressão
+
+| Verificação | Resultado |
+|-------------|-----------|
+| Suíte completa | ✅ **82 passed** (13,81 s — venv recém-criado) |
+| Imports | ✅ 32 módulos, **0 falhas** |
+| OpenAPI | ✅ 8 rotas |
+| `GET /health` | ✅ 200 `{"status":"ok"}` |
+| Geração de PDF | ✅ 24.974 bytes, cabeçalho `%PDF-` |
+| `pip check` | ✅ sem conflitos |
+
+### E13.7 Warnings com remoção futura de API (registrados, não são erro)
+
+| Origem | Warning | Risco |
+|--------|---------|-------|
+| `laudo_pdf.py:153` | `datetime.utcnow()` depreciado, **remoção prevista** | Quebra quando o Python remover |
+| `laudo_pdf.py:299,192,304,307` | `fpdf2`: parâmetro `ln=` depreciado desde 2.5.2 | Baixo com teto `<2.10` |
+| `laudo_pdf.py:409` | `fpdf2`: `dest=` **será removido** | Alto sem teto; mitigado |
+| `fastapi/testclient.py:1` | `StarletteDeprecationWarning`: `httpx` no TestClient depreciado, recomenda `httpx2` | Médio — `httpx2` não é usado pelo projeto |
+
+### E13.8 Limitações remanescentes
+
+- O `constraints.txt` é um retrato de **uma** plataforma (Windows x64, CPython 3.13). Em Linux ou
+  outra versão de Python, a resolução pode divergir em pacotes condicionais (`colorama`,
+  `exceptiongroup`, `uvloop`).
+- Nenhuma verificação de segurança/licença automatizada foi adicionada (continua sendo P-03).
+- `pip-tools`/`uv` não foram introduzidos — a missão proíbe ferramentas novas sem necessidade.

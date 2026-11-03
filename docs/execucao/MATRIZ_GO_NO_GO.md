@@ -407,3 +407,34 @@ O que falta para a Fase 0 não é mais técnico — é a decisão de negócio (G
 | Produto (Fase 0) | 0 de 1 — aguarda autorização |
 | Comercial | 0 de 1 — 0/10 entrevistas |
 | Trilha B | 0 de 2 — bloqueada por licença e privacidade |
+
+---
+
+## 16. REVISÃO — P-18 Estabilização de dependências (2026-11-03)
+
+> Substitui o status de **G-11** em §15.2. Fonte: `EVIDENCIAS.md` E13.
+
+### 16.1 Gates revisados
+
+| Gate | Critério | Evidência | Status |
+|------|----------|-----------|--------|
+| **G-11** | Dependências com faixa + conjunto verificado | E13: `constraints.txt` (34 pacotes), `pip check` limpo, 34/34 idênticos em instalação limpa | 🟢 **ABERTO** |
+| **G-12** | Instalação limpa documentada | `backend/README.md` — comando oficial com `-c constraints.txt` | 🟢 **ABERTO** |
+
+### 16.2 Decisão
+
+> ## ✅ **G-11 e G-12 fechados.** O ambiente é reprodutível.
+> ## 🔴 **G-06 permanece fechado.**
+
+O conjunto **técnico** de pré-requisitos da Fase 0 está completo: havia 6 gates, e os 6 estão abertos.
+
+### 16.3 Placar final
+
+| Bloco | Gates abertos |
+|-------|---------------|
+| Técnico (pré-Fase 0) | ✅ **6 de 6** |
+| Produto (Fase 0) | 🔴 0 de 1 — aguarda autorização explícita |
+| Comercial | 🔴 0 de 1 — 0/10 entrevistas |
+| Trilha B | 🔴 0 de 2 — licença e privacidade |
+
+**Leitura:** nada mais falta do lado da engenharia para começar a Fase 0. O que falta é decisão.

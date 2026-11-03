@@ -8,6 +8,45 @@ O projeto **não segue versionamento semântico ainda** — não há tag nem rel
 
 ---
 
+## [Não lançado] — 2026-11-03 — P-18: estabilização de dependências
+
+### Adicionado
+
+- **`backend/constraints.txt`** — 34 pacotes com as versões **efetivamente testadas**, incluindo
+  transitivas. É o travamento da resolução, não a lista de dependências.
+- **`backend/README.md`** — procedimento oficial de instalação limpa, as três camadas de dependência e
+  a regra para subir versão. Preenche a lacuna de README do backend.
+
+### Alterado
+
+- **`backend/requirements.txt`** — dependências diretas passam a declarar limites de compatibilidade:
+  - `0.x` → teto no próximo **minor** (`fastapi>=0.162.0,<0.163`, `uvicorn>=0.54.0,<0.55`,
+    `httpx>=0.28.1,<0.29`, `psycopg2-binary>=2.9.13,<2.10`, `fpdf2>=2.9.0,<2.10`)
+  - `>=1.x` → teto no próximo **major** (`sqlalchemy>=2.1.6,<3.0`, `pydantic>=2.14.2,<3.0`)
+  - `tzdata` permanece sem teto: são dados, não API
+- **`backend/requirements-dev.txt`** — `pytest>=9.2.0,<10.0`; removida a duplicata de `httpx` (já é
+  dependência direta de produção).
+
+### Verificação
+
+| Item | Resultado |
+|------|-----------|
+| Ambiente recriado do zero com `-c constraints.txt` | ✅ 34/34 pacotes idênticos |
+| Divergência contra o baseline aprovado | **0** (nenhum upgrade) |
+| `pip check` | ✅ `No broken requirements found.` |
+| Suíte completa | ✅ **82 passed** |
+| Imports | ✅ 32 módulos, 0 falhas |
+| OpenAPI | ✅ 8 rotas |
+| `GET /health` | ✅ 200 `{"status":"ok"}` |
+| Geração de PDF | ✅ 24.974 bytes, cabeçalho `%PDF-` |
+
+### Não alterado
+
+- Nenhuma versão foi trocada. Nenhum pacote instalado. Nenhum upgrade.
+- Código de produto, migrações, banco, PWA, dashboard: intocados.
+
+---
+
 ## [Não lançado] — 2026-11-03 — Correção P-16 (inicialização do FastAPI)
 
 ### Corrigido

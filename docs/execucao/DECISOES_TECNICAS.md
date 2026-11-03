@@ -217,9 +217,9 @@ união é rejeitada como `response_model` e o import do módulo falha.
 
 ---
 
-## ADR-010 — Política de versões reproduzíveis (proposta, **não aplicada**)
+## ADR-010 — Política de versões reproduzíveis
 
-**Status:** PROPOSTO · requer aprovação
+**Status:** IMPLEMENTADO · TESTADO · commit de P-18
 
 **Contexto.** `requirements.txt` declara as 7 dependências com `>=` e **sem teto**. Foi exatamente isso
 que produziu o P-16: o `pip install` de hoje resolveu `fastapi 0.162.0`, que rejeita uma construção
@@ -245,14 +245,33 @@ aceita pela 0.115. O mesmo vale para `fpdf2`, cujos parâmetros `ln=` e `dest=` 
 | **Acompanham o upstream** | `uvicorn`, `sqlalchemy`, `httpx`, `psycopg2-binary`, `pytest` | `>=` como hoje |
 | **Registro por release** | todas | `baseline_freeze.txt` atualizado a cada release = lock efetivo |
 
-Valores sugeridos (não aplicados):
+Valores **aplicados** (ver `requirements.txt`, `requirements-dev.txt` e `constraints.txt`):
 
 ```
-fastapi>=0.162.0,<1.0
-starlette>=1.10.0,<2.0
-pydantic>=2.14.0,<3.0
-fpdf2>=2.9.0,<3.0
+fastapi>=0.162.0,<0.163
+uvicorn[standard]>=0.54.0,<0.55
+sqlalchemy>=2.1.6,<3.0
+psycopg2-binary>=2.9.13,<2.10
+pydantic>=2.14.2,<3.0
+httpx>=0.28.1,<0.29
+fpdf2>=2.9.0,<2.10
+tzdata>=2024.1              (sem teto: dados, não API)
 ```
+
+**Decisão revista em relação à proposta original.** A proposta inicial usava teto de major
+(`fastapi>=0.162.0,<1.0`). Isso estava **errado** para pacotes `0.x`: o major nunca muda, então
+`<1.0` aceitaria `0.999.0`. O P-16 nasceu exatamente de uma subida de *minor* (0.161 → 0.162). Por
+isso a regra final é:
+
+| Faixa do pacote | Unidade de quebra | Teto aplicado |
+|-----------------|-------------------|---------------|
+| `0.x.y` | minor | próximo **minor** |
+| `>=1.x` | major | próximo **major** |
+
+E `starlette` **não** entra em `requirements.txt`. O `fastapi 0.162.0` declara `starlette>=0.46.0`
+**sem teto**; declará-la como dependência direta criaria a possibilidade de um piso conflitante com a
+faixa exigida por uma futura versão do FastAPI. Ela é travada apenas em `constraints.txt`
+(`starlette==1.10.0`), onde é uma restrição de resolução — que é o papel correto.
 
 **Consequência esperada.**
 - ✅ P-16 não se repete com outra dependência de framework.
@@ -262,8 +281,12 @@ fpdf2>=2.9.0,<3.0
   conflito. **Recomendação:** usar apenas como *restrição* (`constraints.txt`), não em
   `requirements.txt`.
 
-**Não aplicado nesta sprint** porque a autorização de P-16 tinha escopo limitado e a missão proíbe
-"upgrades generalizados" e alterações além do escopo. Fica como P-18.
+**Aplicado nesta sprint (P-18).** Verificação: ambiente recriado do zero com
+`pip install -r requirements.txt -r requirements-dev.txt -c constraints.txt` → 34/34 pacotes
+idênticos ao baseline, `pip check` sem conflitos, 82 testes aprovados.
+
+**Risco aceito e registrado:** tetos impedem correções de segurança automáticas. Mitigação:
+revisão trimestral do `constraints.txt` e registro em `CHANGELOG.md` a cada subida.
 
 ---
 
@@ -280,4 +303,4 @@ fpdf2>=2.9.0,<3.0
 | 007 | RF-DETR sim / YOLO não | APROVADO (herdado) |
 | 008 | Baseline congelado | IMPLEMENTADO |
 | **009** | **`response_model=None` na rota de laudo** | **IMPLEMENTADO / TESTADO** |
-| **010** | **Política de versões com teto** | **PROPOSTO — aguarda aprovação** |
+| **010** | **Política de versões com teto** | **IMPLEMENTADO / TESTADO** |
