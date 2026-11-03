@@ -24,6 +24,7 @@ PAPEIS_OBRA: Final = ("engenheiro", "fiscal", "auditor")
 ACOES: Final = (
     "criar_obra",
     "editar_especificacao",
+    "gerenciar_pedido",
     "criar_recebimento",
     "anexar_evidencia",
     "ver_evidencia",
@@ -41,6 +42,10 @@ MATRIZ: Final[dict[str, dict[str, bool]]] = {
         "admin_tenant": True, "engenheiro": False, "fiscal": False, "auditor": False,
     },
     "editar_especificacao": {
+        "admin_tenant": True, "engenheiro": True, "fiscal": False, "auditor": False,
+    },
+    "gerenciar_pedido": {
+        # Quem compra é engenharia/suprimentos, não o fiscal do canteiro.
         "admin_tenant": True, "engenheiro": True, "fiscal": False, "auditor": False,
     },
     "criar_recebimento": {
