@@ -13,6 +13,8 @@ from uuid import UUID
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from app.tenant import vincular_sessao
+
 logger = logging.getLogger(__name__)
 
 DELAYS_MINUTOS = (5, 15, 30)
@@ -28,12 +30,21 @@ def enfileirar_apos_falha_xml(
     obra_id: UUID,
     chave_acesso: str,
     ultimo_erro: str | None = None,
+    tenant_id: UUID | None = None,
 ) -> dict[str, Any]:
     chave = chave_acesso[:44]
     proxima = agora_utc() + timedelta(minutes=DELAYS_MINUTOS[0])
+    # O tenant é NOT NULL na fila. Preferimos o valor explícito; se não vier,
+    # resolvemos pela obra — que só é visível se a sessão já estiver no contexto
+    # do tenant correto.
     sql = text("""
-        INSERT INTO fila_nfe (obra_id, chave_acesso, tentativas, proxima_tentativa, status, ultimo_erro)
-        VALUES (:obra_id, :chave, 0, :proxima, 'pendente', :erro)
+        INSERT INTO fila_nfe (
+            tenant_id, obra_id, chave_acesso, tentativas, proxima_tentativa, status, ultimo_erro
+        )
+        VALUES (
+            COALESCE(CAST(:tenant AS uuid), (SELECT o.tenant_id FROM obras o WHERE o.id = CAST(:obra_id AS uuid))),
+            :obra_id, :chave, 0, :proxima, 'pendente', :erro
+        )
         ON CONFLICT (obra_id, chave_acesso) DO UPDATE SET
             ultimo_erro = EXCLUDED.ultimo_erro,
             proxima_tentativa = EXCLUDED.proxima_tentativa,
@@ -45,7 +56,13 @@ def enfileirar_apos_falha_xml(
     """)
     row = db.execute(
         sql,
-        {"obra_id": str(obra_id), "chave": chave, "proxima": proxima, "erro": ultimo_erro},
+        {
+            "tenant": str(tenant_id) if tenant_id else None,
+            "obra_id": str(obra_id),
+            "chave": chave,
+            "proxima": proxima,
+            "erro": ultimo_erro,
+        },
     ).mappings().first()
     db.commit()
     return dict(row) if row else {}
@@ -61,24 +78,18 @@ def marcar_notificado_aguardando(db: Session, fila_id: UUID) -> None:
 
 def _reivindicar_lote_fila(db: Session, limite: int = 50) -> list[Any]:
     """
-    Atomically: seleciona linhas elegíveis com SKIP LOCKED e marca como processando.
-    Retorna linhas para trabalho fora do lock prolongado (commit libera bloqueio).
+    Claim atômico de trabalho entre tenants.
+
+    Com RLS ligado em `fila_nfe`, um SELECT comum só enxergaria a fila do
+    tenant da sessão — e o worker começa sem sessão de tenant. Por isso o claim
+    inteiro (SKIP LOCKED + UPDATE + RETURNING) vive na função SECURITY DEFINER
+    `fila_reivindicar_lote`, que devolve o `tenant_id` de cada linha. O worker
+    abre o contexto por item e executa o resto sob RLS normalmente.
     """
     rows = db.execute(
         text("""
-            WITH candidatos AS (
-                SELECT id
-                FROM fila_nfe
-                WHERE status = 'pendente' AND proxima_tentativa <= NOW()
-                ORDER BY proxima_tentativa
-                FOR UPDATE SKIP LOCKED
-                LIMIT :limite
-            )
-            UPDATE fila_nfe AS f
-            SET status = 'processando', updated_at = NOW()
-            FROM candidatos AS c
-            WHERE f.id = c.id
-            RETURNING f.id, f.obra_id, f.chave_acesso, f.tentativas, f.notificado_aguardando
+            SELECT id, tenant_id, obra_id, chave_acesso, tentativas, notificado_aguardando
+            FROM fila_reivindicar_lote(:limite)
         """),
         {"limite": limite},
     ).mappings().all()
@@ -102,6 +113,10 @@ def processar_tick_fila(
         chave = str(row["chave_acesso"])
         tentativas = int(row["tentativas"])
         notificado = bool(row["notificado_aguardando"])
+
+        # Abre o contexto do tenant dono desta linha. A partir daqui, toda
+        # leitura/escrita em nfe_logs, nfe_itens e fila_nfe passa pelo RLS.
+        vincular_sessao(db, row["tenant_id"])
 
         if not notificado and notificar_aguardando:
             try:

@@ -222,9 +222,9 @@ def post_conferir(
         row_pend = db.execute(
             text("""
                 INSERT INTO nfe_logs (
-                    chave_acesso, obra_id, status_conferencia, xml_data, foto_url, tipo, nf_original_id
+                    tenant_id, chave_acesso, obra_id, status_conferencia, xml_data, foto_url, tipo, nf_original_id
                 )
-                VALUES (:chave, :obra, 'PENDENTE', NULL, :foto, :tipo, :nf_orig)
+                VALUES (:tenant, :chave, :obra, 'PENDENTE', NULL, :foto, :tipo, :nf_orig)
                 ON CONFLICT (obra_id, chave_acesso) DO UPDATE SET
                     status_conferencia = 'PENDENTE',
                     processado_em = NOW(),
@@ -234,6 +234,7 @@ def post_conferir(
                 RETURNING id
             """),
             {
+                "tenant": str(obra["tenant_id"]),
                 "chave": chave,
                 "obra": str(body.obra_id),
                 "foto": body.foto_url,
@@ -247,6 +248,7 @@ def post_conferir(
             obra_id=body.obra_id,
             chave_acesso=chave,
             ultimo_erro="XML não encontrado na API (404 ou timeout)",
+            tenant_id=obra["tenant_id"],
         )
         background_tasks.add_task(_notificar_aguardando, str(body.obra_id), chave, whatsapp_destino_obra)
         return _resposta_pendente_rica(

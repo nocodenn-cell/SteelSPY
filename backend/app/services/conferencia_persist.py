@@ -90,11 +90,11 @@ def gravar_conferencia_com_xml(
     row = db.execute(
         text("""
             INSERT INTO nfe_logs (
-                chave_acesso, obra_id, status_conferencia, xml_data, foto_url,
+                tenant_id, chave_acesso, obra_id, status_conferencia, xml_data, foto_url,
                 resumo_global, itens_resumo, tipo, nf_original_id
             )
             VALUES (
-                :chave, :obra, :status, CAST(:xml AS jsonb), :foto,
+                :tenant, :chave, :obra, :status, CAST(:xml AS jsonb), :foto,
                 :resumo_g, CAST(:itens_res AS jsonb), :tipo, :nf_orig
             )
             ON CONFLICT (obra_id, chave_acesso) DO UPDATE SET
@@ -111,6 +111,7 @@ def gravar_conferencia_com_xml(
             RETURNING id
         """),
         {
+            "tenant": str(obra["tenant_id"]),
             "chave": chave,
             "obra": str(obra_id),
             "status": st,
@@ -125,7 +126,12 @@ def gravar_conferencia_com_xml(
 
     nfe_log_id_uuid = UUID(str(row["id"])) if row else None
     if nfe_log_id_uuid:
-        substituir_itens_nfe(db, nfe_log_id=nfe_log_id_uuid, linhas=resultado["itens_processados"])
+        substituir_itens_nfe(
+            db,
+            nfe_log_id=nfe_log_id_uuid,
+            tenant_id=obra["tenant_id"],
+            linhas=resultado["itens_processados"],
+        )
 
     out = {**resultado, "mensagem_fiscal": msg_fiscal, "obra_id": str(obra_id)}
     return nfe_log_id_uuid, out
