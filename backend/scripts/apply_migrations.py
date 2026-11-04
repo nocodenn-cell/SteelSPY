@@ -27,6 +27,7 @@ import argparse
 import os
 import sys
 from pathlib import Path
+from urllib.parse import urlparse
 
 import psycopg2
 
@@ -139,6 +140,14 @@ def main(argv: list[str] | None = None) -> int:
         print(
             "ERRO: a URL administrativa ainda contém placeholder. "
             "Substitua a senha em SUPABASE_DB_ADMIN_URL no arquivo local.",
+            file=sys.stderr,
+        )
+        return 2
+    senha_url = urlparse(normalizar_url(url)).password or ""
+    if any(caractere in senha_url for caractere in "@:/?#[]"):
+        print(
+            "ERRO: a senha da URL administrativa tem caractere reservado sem "
+            "percent-encoding. Codifique-a (ex.: @ -> %40) no arquivo local.",
             file=sys.stderr,
         )
         return 2

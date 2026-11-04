@@ -96,6 +96,8 @@ def problema_na_url_postgres(url: str) -> str | None:
         return "usuário ausente"
     if not partes.password:
         return "senha ausente"
+    if any(caractere in partes.password for caractere in "@:/?#[]"):
+        return "a senha tem caractere reservado sem codificação (use percent-encoding)"
     if not partes.hostname:
         return "host ausente"
     if not (partes.path or "").strip("/"):

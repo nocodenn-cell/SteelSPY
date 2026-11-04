@@ -72,6 +72,8 @@ def test_senha_e_mascarada_em_mensagem_de_erro():
             "postgresql://postgres.ref:senha-real@aws-0-sa-east-1.pooler.supabase.com:5432/postgres",
             None,
         ),
+        ("postgresql://postgres.ref:sen%40ha@host:5432/postgres", None),
+        ("postgresql://postgres.ref:sen@ha@host:5432/postgres", "reservado"),
         (
             "postgresql://postgres.ref:[SENHA_POSTGRES]@aws-0-sa-east-1.pooler.supabase.com:5432/postgres",
             "colchetes",

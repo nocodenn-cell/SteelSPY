@@ -43,3 +43,14 @@ def test_main_recusa_url_com_placeholder(tmp_path: Path, monkeypatch):
         encoding="utf-8",
     )
     assert runner.main(["--env-file", str(arquivo), "--dir", str(tmp_path)]) == 2
+
+
+def test_main_recusa_senha_com_arroba_sem_codificacao(tmp_path: Path, monkeypatch):
+    monkeypatch.delenv("SUPABASE_DB_ADMIN_URL", raising=False)
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    arquivo = tmp_path / ".env"
+    arquivo.write_text(
+        "SUPABASE_DB_ADMIN_URL=postgresql://postgres.ref:se@nha@host:5432/postgres\n",
+        encoding="utf-8",
+    )
+    assert runner.main(["--env-file", str(arquivo), "--dir", str(tmp_path)]) == 2
