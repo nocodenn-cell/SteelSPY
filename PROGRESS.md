@@ -81,5 +81,10 @@ projeto remoto e o único bloqueio restante é a senha real do usuário
    ```
 
 3. Se `migrations_pendentes` contiver arquivos, revisar o diff e só então aplicar
-   com `apply_migrations.py --url "$SUPABASE_DB_ADMIN_URL"`. Nenhuma operação
-   destrutiva é autorizada.
+   com o runner lendo o próprio `.env` (sem exportar segredo no shell):
+
+   ```
+   cd backend && python scripts/apply_migrations.py --env-file .env
+   ```
+
+   Nenhuma operação destrutiva é autorizada.

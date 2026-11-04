@@ -198,7 +198,14 @@ cd backend
 # 1) edite APENAS a senha em SUPABASE_DB_ADMIN_URL (Session pooler, usuário postgres.<ref>)
 python scripts/verificar_env_supabase.py   # precisa terminar sem BLOQUEADO
 python scripts/diagnostico_supabase.py     # read-only; gera .devtmp/supabase_oficial_diag.json
+
+# revisado o relatório e confirmado que só há migrations pendentes:
+python scripts/apply_migrations.py --env-file .env
 ```
+
+O runner prefere `SUPABASE_DB_ADMIN_URL` a `DATABASE_URL` e recusa URL com
+placeholder antes de abrir conexão; a senha da role vem de
+`STELLSPY_APP_PASSWORD` no mesmo arquivo.
 
 Depois do diagnóstico, o plano de migrations só é executado se a diferença for
 aditiva. `apply_migrations.py` recusa rodar como `stellspy_app`; a role é criada

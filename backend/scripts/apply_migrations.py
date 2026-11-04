@@ -11,11 +11,14 @@ Garantias:
 - a ordem é lexicográfica pelo nome (timestamp), igual ao padrão do projeto.
 
 Uso:
-    set DATABASE_URL=postgresql://user:senha@host:porta/banco
-    python scripts/apply_migrations.py
+    # lê SUPABASE_DB_ADMIN_URL e STELLSPY_APP_PASSWORD do .env local
+    python scripts/apply_migrations.py --env-file .env
 
     # ou explícito
     python scripts/apply_migrations.py --url postgresql://... --dir ../supabase/migrations
+
+O runner prefere `SUPABASE_DB_ADMIN_URL` a `DATABASE_URL`: a segunda é da role
+operacional, e usá-la para DDL seria justamente o que a RLS impede.
 """
 
 from __future__ import annotations
@@ -44,6 +47,20 @@ def normalizar_url(url: str) -> str:
     return url.replace("postgresql+psycopg2://", "postgresql://").replace(
         "postgres+psycopg2://", "postgresql://"
     )
+
+
+def ler_env(caminho: Path | None) -> dict[str, str]:
+    """Lê KEY=VALUE sem sobrescrever o que já veio do ambiente."""
+    if caminho is None or not caminho.is_file():
+        return {}
+    valores: dict[str, str] = {}
+    for linha in caminho.read_text(encoding="utf-8", errors="replace").splitlines():
+        bruta = linha.strip()
+        if not bruta or bruta.startswith("#") or "=" not in bruta:
+            continue
+        chave, valor = bruta.split("=", 1)
+        valores[chave.strip()] = valor.strip().strip('"').strip("'")
+    return valores
 
 
 def conectar(url: str, app_password: str | None = None):
@@ -98,12 +115,32 @@ def aplicar(conn, arquivo: Path, versao: str) -> None:
 
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("--url", default=os.getenv("DATABASE_URL", ""), help="URL do PostgreSQL")
+    p.add_argument("--url", default="", help="URL administrativa do PostgreSQL")
     p.add_argument("--dir", default=str(DIR_PADRAO), help="diretório das migrações")
+    p.add_argument("--env-file", type=Path, default=None, help="arquivo KEY=VALUE local")
     args = p.parse_args(argv)
 
-    if not args.url:
-        print("ERRO: defina --url ou DATABASE_URL", file=sys.stderr)
+    valores = ler_env(args.env_file)
+    url = (
+        args.url
+        or os.getenv("SUPABASE_DB_ADMIN_URL")
+        or os.getenv("DATABASE_URL")
+        or valores.get("SUPABASE_DB_ADMIN_URL")
+        or valores.get("DATABASE_URL")
+        or ""
+    )
+    if not url:
+        print(
+            "ERRO: defina --url, SUPABASE_DB_ADMIN_URL ou --env-file com a URL administrativa",
+            file=sys.stderr,
+        )
+        return 2
+    if "[" in url or "]" in url or "<HOST" in url.upper():
+        print(
+            "ERRO: a URL administrativa ainda contém placeholder. "
+            "Substitua a senha em SUPABASE_DB_ADMIN_URL no arquivo local.",
+            file=sys.stderr,
+        )
         return 2
 
     diretorio = Path(args.dir)
@@ -116,9 +153,13 @@ def main(argv: list[str] | None = None) -> int:
         print(f"ERRO: nenhum .sql em {diretorio}", file=sys.stderr)
         return 2
 
-    app_password = os.getenv("STELLSPY_APP_PASSWORD", "").strip() or None
+    app_password = (
+        os.getenv("STELLSPY_APP_PASSWORD")
+        or valores.get("STELLSPY_APP_PASSWORD")
+        or ""
+    ).strip() or None
 
-    conn = conectar(args.url, app_password)
+    conn = conectar(url, app_password)
     try:
         try:
             validar_role_migracao(conn)
