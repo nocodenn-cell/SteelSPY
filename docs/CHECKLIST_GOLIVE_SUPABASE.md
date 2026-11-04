@@ -186,6 +186,7 @@ Executado só leitura, sem a senha administrativa:
 | Buckets remotos | `[]` — o bucket `evidencias` ainda não existe (M30 cria) |
 | Pooler | DNS resolve e TCP `aws-0-us-east-2.pooler.supabase.com:5432` responde em ~0,25 s |
 | Role `stellspy_app` | **ausente** — login devolve `user not found in the database` |
+| Schema remoto | nenhuma tabela do SteelSPY exposta: `schema_migrations`, `construtoras`, `obras` e `evidencias` → `404 PGRST205`; 0/30 migrations (inicialização aditiva) |
 | `SUPABASE_DB_ADMIN_URL` | placeholder `[SENHA_POSTGRES]`; nenhum arquivo local tem a senha real |
 | Suíte unitária após as correções | **325 passed** |
 | Testes do diagnóstico | **17 passed** |
