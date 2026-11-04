@@ -209,10 +209,17 @@ def _roles(cur) -> list[dict[str, Any]]:
 
 
 def _migrations(cur) -> dict[str, Any]:
-    if not _consulta(cur, "SELECT to_regclass('public.schema_migrations') IS NOT NULL")[0][0]:
-        return {"tabela_existe": False, "aplicadas": []}
-    linhas = _consulta(cur, "SELECT versao, nome_arquivo, aplicado_em FROM schema_migrations ORDER BY versao")
     locais = sorted(p.stem for p in (RAIZ_REPO / "supabase" / "migrations").glob("*.sql"))
+    if not _consulta(cur, "SELECT to_regclass('public.schema_migrations') IS NOT NULL")[0][0]:
+        # Sem a tabela, nenhuma migration local está aplicada — o diff não pode
+        # sair vazio, senão o resumo mente dizendo que não há nada pendente.
+        return {
+            "tabela_existe": False,
+            "aplicadas": [],
+            "locais": len(locais),
+            **diferenca_migrations([], locais),
+        }
+    linhas = _consulta(cur, "SELECT versao, nome_arquivo, aplicado_em FROM schema_migrations ORDER BY versao")
     aplicadas = [linha[0] for linha in linhas]
     return {
         "tabela_existe": True,

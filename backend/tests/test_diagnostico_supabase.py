@@ -58,6 +58,24 @@ def test_diferenca_aponta_pendente_e_orfao():
     assert diferenca == {"pendentes_no_banco": [], "no_banco_sem_arquivo": ["9"]}
 
 
+class _CursorSemTabela:
+    def execute(self, sql, params=None):
+        self.sql = sql
+
+    def fetchall(self):
+        return [(False,)]
+
+
+def test_sem_schema_migrations_todas_as_locais_ficam_pendentes():
+    relatorio = diag._migrations(_CursorSemTabela())
+
+    assert relatorio["tabela_existe"] is False
+    assert relatorio["aplicadas"] == []
+    assert relatorio["locais"] == len(relatorio["pendentes_no_banco"])
+    assert relatorio["no_banco_sem_arquivo"] == []
+    assert relatorio["pendentes_no_banco"], "banco vazio não pode reportar zero pendentes"
+
+
 def test_senha_e_mascarada_em_mensagem_de_erro():
     texto = "could not connect to postgresql://postgres.akvbtceshpsvsuacueaq:segredo123@aws-0-sa-east-1.pooler.supabase.com:5432/postgres"
     mascarado = diag.mascarar(texto)
