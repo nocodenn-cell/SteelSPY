@@ -4,14 +4,13 @@
 
 ## Fase atual
 
-**FASE B — integração ao Supabase oficial (`akvbtceshpsvsuacueaq`).**
-Sprint 4 homologada localmente sobre o próprio stack Supabase (PostgreSQL 17.11).
-O projeto remoto foi alcançado e identificado, mas a autenticação administrativa
-foi **recusada pelo pooler** em 2026-11-04 (`password authentication failed`).
-Nenhuma migration, role ou bucket remoto foi criado: a execução parou antes de
-qualquer escrita (ver Bloqueios). Enquanto o acesso remoto está bloqueado, as 30
-migrations foram revalidadas do zero em PostgreSQL 16.15 e 17.11 locais, com
-prova de RLS pela role operacional e Storage real no Supabase local.
+**FASE B — Supabase oficial homologado (`akvbtceshpsvsuacueaq`).**
+O destravamento da senha administrativa foi confirmado em 2026-11-04. As 30
+migrations foram aplicadas no projeto oficial (0 → 30/30), a role `stellspy_app`
+foi criada sem `BYPASSRLS`, o bucket `evidencias` nasceu privado, a HML com duas
+construtoras sintéticas passou 12/12 e o E2E HTTP gravou e leu uma evidência real
+no Storage oficial com SHA-256 conferido. O remoto está homologado para os fluxos
+cobertos; deploy/push seguem fora de escopo.
 
 ## Concluído
 
@@ -47,14 +46,26 @@ prova de RLS pela role operacional e Storage real no Supabase local.
 | Validação local (B) | 30 migrations do zero em PostgreSQL 17.11 isolado | container descartável em 55433: `apply_migrations.py` → **30 aplicadas**; 30 versões únicas; role `stellspy_app` (`super=f bypassrls=f createrole=f createdb=f login=t`); 23 tabelas, 20 RLS + 20 FORCE + 20 políticas; `storage` ausente (M30 no-op) |
 | Validação local (B) | isolamento RLS com a role operacional no PG 17 | sem `app.tenant_id`: 0 linhas; tenant A vê só A; tenant B vê só B; B não enxerga obra de A |
 | Validação local (B) | Storage real contra o Supabase local | `pytest -m supabase_local` → **2 passed** (upload/leitura/duplicado/remoção + API → bucket privado → download) |
+| Remoto (B) | configuração e conexão administrativa aprovadas | `verificar_env_supabase.py` → 0 bloqueios, 2 avisos; `diagnostico_supabase.py` conecta como `postgres.<ref>` ao projeto `akvbtceshpsvsuacueaq` (PG 17.11) |
+| Remoto (B) | migrations aplicadas no projeto oficial | `apply_migrations.py --env-file .env` → **30 aplicadas** (0 → 30/30, 16:51 UTC); reexecução → **0 pendentes** |
+| Remoto (B) | role operacional criada e utilizável | `stellspy_app` com `super=f bypassrls=f createrole=f createdb=f login=t`; login por `DATABASE_URL` OK; sem contexto de tenant vê 0 construtoras |
+| Remoto (B) | RLS/FORCE/políticas no schema oficial | 23 tabelas em `public`, **20 com RLS + 20 FORCE + 20 políticas**; `tenant_sem_rls=[]` |
+| Remoto (B) | HML com duas construtoras sintéticas | **12/12 PASS**: sem contexto 0 usuários; A vê só A; B vê só B; update/insert cruzados bloqueados; pedido e NF-e de A invisíveis para B |
+| Remoto (B) | HML idempotente | segunda execução com o mesmo prefixo manteve os mesmos IDs, 3 usuários e 2 construtoras; **12/12 PASS** de novo |
+| Remoto (B) | Storage oficial privado | bucket `evidencias` (`public=false`, 12 MiB); ciclo real upload/leitura/duplicado/remoção → **1 passed**; rota pública não entrega o objeto |
+| Remoto (B) | E2E HTTP no banco oficial | login sintético → upload **201** → download normalizado e original **200**; bytes originais idênticos e SHA-256 normalizado/original conferem; cross-tenant **404** |
+| Remoto (B) | suíte completa após as correções | **514 passed, 2 skipped** |
 
 ## Pendente
 
-- Regravar a senha correta de `postgres.<ref>` com
-  `python scripts/configurar_senha_admin.py` (prompt oculto; não vai para o histórico).
-- Repetir o diagnóstico remoto e aplicar as 30 migrations pendentes.
-- Rodar `hml_staging.py --acao tudo` no projeto oficial e reexecutar para idempotência.
-- Homologação funcional HTTP + PWA contra o banco oficial (o fluxo já passa localmente).
+- Homologação funcional do PWA no navegador contra o banco oficial (o fluxo HTTP
+  já passa; falta a interface em aparelho/navegador real).
+- Definir `CORS_ALLOW_ORIGINS` com as origens exatas antes de qualquer deploy.
+- Decidir o destino dos dados sintéticos HML no projeto oficial: permanecem duas
+  construtoras `hml-*`, 3 usuários e uma evidência. A limpeza automática pode ser
+  bloqueada pela FK de evidências; qualquer remoção exige autorização explícita.
+- Rotacionar a senha administrativa usada no destravamento, por higiene, depois
+  de concluída a janela de homologação.
 - Sprint 5: coletar e anonimizar fotografias do recebimento real; depois anotar,
   treinar e avaliar — nenhum modelo entra no produto sem os portões de
   `exp_vc02` (métricas + validação humana).
@@ -64,39 +75,26 @@ prova de RLS pela role operacional e Storage real no Supabase local.
 
 | Bloqueio | O que falta |
 |----------|-------------|
-| Autenticação administrativa | o pooler recusa a senha atual de `postgres.akvbtceshpsvsuacueaq` (`password authentication failed`). Confira/redo o valor no painel (Settings → Database) e regrave com `scripts/configurar_senha_admin.py`; nunca no chat |
-| Mutações remotas | sem a autenticação acima não há como criar a role, aplicar as 30 migrations, criar o bucket ou provar RLS no projeto oficial |
+| Deploy | fora de escopo por instrução; nada foi publicado nem enviado ao Git remoto |
+| PWA em aparelho real | câmera e fluxo de campo ainda não exercitados no navegador do celular |
 | VC-01 em campo | fotografias do cenário real de recebimento e GPU (RTX 4070 não presente nesta máquina) |
 | Sprint 5 dados | ≥ 60 obras / ≥ 600 fotos rotuladas; sem isso, não há métrica honesta |
 
 ## Último commit de entrega
 
-`35a5ca3` — fix(config): exige percent-encoding na senha e grava sem expor.
+`ef0fe4c` — fix(hml): compara migrations pelo nome completo e filtra RLS por tenant.
 (Atualizações de bookkeeping deste arquivo não contam.)
 
 ## Próxima ação automática
 
-1. Regravar a senha administrativa correta no prompt oculto (ela não aparece
-   no terminal nem no histórico):
+1. Homologar o PWA no navegador contra o banco oficial (login, obra, upload pela
+   câmera, download e bloqueio cross-tenant). O E2E HTTP já passou; falta a
+   interface real. Em HTTP local, subir o backend com `PWA_COOKIE_SECURE=0`
+   apenas no processo de teste.
+2. Definir `CORS_ALLOW_ORIGINS` com as origens exatas antes de qualquer deploy.
+3. Decidir com o proprietário o destino dos dados HML sintéticos e a rotação da
+   senha administrativa após a janela de homologação.
+4. Sprint 5: coletar e anonimizar fotografias reais; nenhum modelo entra no
+   produto sem os portões de `exp_vc02`.
 
-   ```
-   cd backend && python scripts/configurar_senha_admin.py
-   ```
-
-   Hoje a senha gravada é recusada pelo pooler; o helper já testa a conexão.
-
-2. Conferir a configuração e rodar o diagnóstico read-only:
-
-   ```
-   cd backend && python scripts/verificar_env_supabase.py
-   cd backend && python scripts/diagnostico_supabase.py
-   ```
-
-3. Se `migrations_pendentes` contiver arquivos, revisar o diff e só então aplicar
-   com o runner lendo o próprio `.env` (sem exportar segredo no shell):
-
-   ```
-   cd backend && python scripts/apply_migrations.py --env-file .env
-   ```
-
-   Nenhuma operação destrutiva é autorizada.
+Nenhuma operação destrutiva, push ou deploy é autorizada sem pedido explícito.

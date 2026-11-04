@@ -31,18 +31,17 @@ Estado em 2026-11-04 (`backend/.env`, verificado sem exibir valores):
 - `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` e `PWA_SESSION_SECRET`: reais e válidos.
 - `STELLSPY_APP_PASSWORD`: gerada localmente com 43 caracteres (≥ 12).
 - `DATABASE_URL`: role operacional no pooler real, porta 5432.
-- `SUPABASE_DB_ADMIN_URL`: senha presente e percent-encoded, mas **recusada**
-  pelo pooler em 2026-11-04 (`password authentication failed`). Regravar com
-  `python scripts/configurar_senha_admin.py`.
+- `SUPABASE_DB_ADMIN_URL`: senha regravada com `python scripts/configurar_senha_admin.py`
+  e **conexão administrativa OK** em 2026-11-04 (sem exibir o valor).
 
 ---
 
 ## 1. Confirmar o projeto
 
-- [ ] `curl -sI https://akvbtceshpsvsuacueaq.supabase.co/rest/v1/ | grep sb-project-ref`
+- [x] `curl -sI https://akvbtceshpsvsuacueaq.supabase.co/rest/v1/ | grep sb-project-ref`
       deve responder `sb-project-ref: akvbtceshpsvsuacueaq` (401 sem `apikey` é o esperado).
-- [ ] Região = trecho do host do pooler (`aws-0-<região>.pooler.supabase.com`).
-- [ ] Versão do PostgreSQL e PostGIS vêm do diagnóstico abaixo.
+- [x] Região = trecho do host do pooler (`aws-0-us-east-2.pooler.supabase.com`).
+- [x] Versão do PostgreSQL e PostGIS vêm do diagnóstico abaixo (PG **17.11**; PostGIS ausente).
 
 ---
 
@@ -58,11 +57,11 @@ ref, região, versão do PostgreSQL/PostGIS, extensões, schemas, tabelas, RLS/F
 policies, roles, `schema_migrations`, buckets e Auth. A conexão é aberta em
 transação `READ ONLY`; nada é criado ou alterado.
 
-- [ ] `projeto_confere: true`
-- [ ] `tabelas_esperadas_ausentes: []`
-- [ ] `app_sem_bypassrls: true`
-- [ ] `tenant_sem_rls: []`
-- [ ] `migrations_pendentes` conhecido (projeto novo ⇒ todas as 30)
+- [x] `projeto_confere: true`
+- [x] `tabelas_esperadas_ausentes: []` (após as migrations)
+- [x] `app_sem_bypassrls: true`
+- [x] `tenant_sem_rls: []`
+- [x] `migrations_pendentes` conhecido: projeto novo ⇒ 30 pendentes; depois, 0
 
 ---
 
@@ -74,16 +73,14 @@ em `schema_migrations`. O runner **recusa** rodar como `stellspy_app`.
 
 ```bash
 cd backend
-export SUPABASE_DB_ADMIN_URL='postgresql://postgres.akvbtceshpsvsuacueaq:...@aws-0-<região>.pooler.supabase.com:5432/postgres'
-export STELLSPY_APP_PASSWORD='<senha-≥12>'
-
-python scripts/apply_migrations.py --url "$SUPABASE_DB_ADMIN_URL"
+# lê SUPABASE_DB_ADMIN_URL e STELLSPY_APP_PASSWORD do .env local (ignorado)
+python scripts/apply_migrations.py --env-file .env
 ```
 
-- [ ] Pooler em modo **sessão** (porta 5432): a senha da role é configurada por sessão.
-- [ ] Projeto novo: 30 pendentes, todas aplicadas.
-- [ ] Projeto com histórico: só as pendentes rodam; não há `DROP` nem `TRUNCATE`.
-- [ ] Reexecutar: `pendentes: 0` (idempotente).
+- [x] Pooler em modo **sessão** (porta 5432): a senha da role é configurada por sessão.
+- [x] Projeto novo: 30 pendentes, todas aplicadas (0 → 30/30, 2026-11-04 16:51 UTC).
+- [x] Projeto com histórico: só as pendentes rodam; não há `DROP` nem `TRUNCATE`.
+- [x] Reexecutar: `pendentes: 0` (idempotente).
 
 A migração 30 cria o bucket privado `evidencias`. Em PostgreSQL puro (sem schema
 `storage`) ela apenas registra e segue.
@@ -106,9 +103,10 @@ HML_SENHA='<senha-hml-≥12>' python scripts/hml_staging.py --acao tudo \
   --prefixo hml-oficial-2026-11-03
 ```
 
-- [ ] 12/12 checks PASS (B não vê A, updates cruzados afetam 0 linhas).
-- [ ] Reexecução com o mesmo prefixo não duplica nada.
-- [ ] Limpeza só com `--acao limpar --confirmar-limpeza` e prefixo `hml-*`.
+- [x] 12/12 checks PASS (B não vê A, updates cruzados afetam 0 linhas).
+- [x] Reexecução com o mesmo prefixo não duplica nada (mesmos IDs, 3 usuários, 2 construtoras).
+- [ ] Limpeza só com `--acao limpar --confirmar-limpeza` e prefixo `hml-*`
+      (não executada: os dados sintéticos permanecem até decisão explícita).
 
 Teste feito com `service_role` **não** vale como prova de isolamento.
 
@@ -116,12 +114,12 @@ Teste feito com `service_role` **não** vale como prova de isolamento.
 
 ## 5. Storage privado
 
-- [ ] Bucket `evidencias` existe e é **privado** (`public = false`).
-- [ ] `EVIDENCIAS_STORAGE=supabase` e `EVIDENCIAS_BUCKET=evidencias` no servidor.
-- [ ] Chaves começam por `tenant_id/obra_id/evidencia_id/…` (auditável por construtora).
-- [ ] Upload grava original + normalizado, cada um com SHA-256 próprio.
-- [ ] Download passa pela API, que confere o hash antes de servir.
-- [ ] Nenhuma URL pública de fotografia.
+- [x] Bucket `evidencias` existe e é **privado** (`public = false`, 12 MiB).
+- [x] `EVIDENCIAS_STORAGE=supabase` e `EVIDENCIAS_BUCKET=evidencias` no servidor.
+- [x] Chaves começam por `tenant_id/obra_id/evidencia_id/…` (auditável por construtora).
+- [x] Upload grava original + normalizado, cada um com SHA-256 próprio.
+- [x] Download passa pela API, que confere o hash antes de servir.
+- [x] Nenhuma URL pública de fotografia (rota pública devolve 400 e não entrega bytes).
 
 O bucket `laudos` (PDF) é opcional; sem ele o laudo é devolvido inline. Se for
 criado, prefira privado com URL assinada — link público de dossiê é decisão de
@@ -146,10 +144,10 @@ curl -s -X POST "$BASE/conferir" \
 ## 7. Invariantes de segurança
 
 - [ ] `SKIP_API_KEY=0` em qualquer ambiente real.
-- [ ] `PWA_SESSION_SECRET` longo e aleatório (≥ 32 bytes).
-- [ ] `CORS_ALLOW_ORIGINS` com origens exatas.
-- [ ] Role `stellspy_app`: `NOSUPERUSER`, `NOBYPASSRLS`, sem `CREATEROLE`.
-- [ ] RLS habilitada e `FORCE` nas tabelas com `tenant_id`.
+- [x] `PWA_SESSION_SECRET` longo e aleatório (64 caracteres).
+- [ ] `CORS_ALLOW_ORIGINS` com origens exatas (vazio; definir antes do deploy).
+- [x] Role `stellspy_app`: `NOSUPERUSER`, `NOBYPASSRLS`, sem `CREATEROLE`.
+- [x] RLS habilitada e `FORCE` nas tabelas com `tenant_id` (20/20 + 20 políticas).
 - [ ] Sem `service_role` em código de cliente.
 - [ ] Chave que apareceu em chat/issue deve ser rotacionada no painel.
 
@@ -177,9 +175,9 @@ No banco remoto, repetir as seções 1–6 e marcar cada item.
 
 ---
 
-## 9. Estado do destravamento remoto (2026-11-04)
+## 9. Histórico do bloqueio administrativo (superado em 2026-11-04)
 
-Executado em 2026-11-04:
+Registro do estado anterior ao destravamento; **não é o estado atual** (ver seção 11):
 
 | Verificação | Resultado |
 |-------------|-----------|
@@ -240,3 +238,35 @@ completo e que a role operacional isola tenants corretamente.
 O que ainda depende do remoto: criar role, aplicar as 30 migrations, criar o
 bucket `evidencias`, repetir a prova de RLS/isolamento e a HML no projeto
 `akvbtceshpsvsuacueaq`.
+
+---
+
+## 11. Homologação remota concluída (2026-11-04)
+
+Senha administrativa regravada pelo proprietário (`conexão administrativa: OK`).
+Todas as operações abaixo foram no projeto oficial `akvbtceshpsvsuacueaq`,
+sem push, deploy ou operação destrutiva.
+
+| Verificação | Resultado real |
+|-------------|----------------|
+| Identidade | `projeto_confere: true`, ref `akvbtceshpsvsuacueaq`, pooler `aws-0-us-east-2`, PostgreSQL **17.11** |
+| Migrations | `apply_migrations.py --env-file .env` → **30 aplicadas** (0 → 30/30, 2026-11-04 16:51 UTC); reexecução → **0 pendentes** |
+| Tabelas | 23 em `public`; 19/19 esperadas presentes |
+| RLS / FORCE / políticas | **20 / 20 / 20**; `tenant_sem_rls: []`, `sem_force_rls: []` |
+| Role operacional | `stellspy_app` → `super=f`, `bypassrls=f`, `createrole=f`, `createdb=f`, `login=t` |
+| Login da aplicação | `DATABASE_URL` como `stellspy_app.<ref>` conecta; sem `app.tenant_id` enxerga **0** construtoras |
+| Bucket | `evidencias` privado (`public=false`), limite **12 MiB**, 0 políticas em `storage.objects` (proposital) |
+| Storage real | ciclo upload/leitura/duplicado/remoção → **1 passed**; rota pública devolve 400 e não entrega bytes |
+| HML sintética | 2 construtoras, 3 usuários, 1 pedido e 1 NF-e → **12/12 PASS** |
+| HML idempotente | segunda execução com mesmo prefixo: mesmos IDs, **12/12 PASS**, sem duplicar |
+| E2E HTTP oficial | login → upload **201** → download normalizado/original **200**; original byte a byte; SHA-256 normalizado e original conferem; cross-tenant **404** |
+| Suíte completa | **514 passed, 2 skipped** |
+
+Dados sintéticos que permanecem no projeto oficial (nenhuma limpeza executada):
+duas construtoras `hml-*`, três usuários `@staging.invalid`, o pedido/NF-e
+sintéticos e uma evidência de homologação. A remoção exige autorização explícita
+e pode esbarrar na FK `evidencias.tenant_id` (`ON DELETE RESTRICT`).
+
+Pendências que não bloqueiam a homologação: `CORS_ALLOW_ORIGINS` vazio, PWA em
+navegador/aparelho real, rotação da senha administrativa após a janela e decisão
+sobre os dados HML.
