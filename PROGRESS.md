@@ -51,7 +51,7 @@ a execução no projeto remoto continua **bloqueada** por credenciais (ver Bloqu
 
 ## Último commit
 
-`37727b7` — test(storage): E2E real da API com o bucket privado do Supabase.
+`ad22f31` — feat(vc02): contratos de dataset e métricas para a Sprint 5.
 
 ## Próxima ação automática
 
