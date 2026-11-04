@@ -44,6 +44,11 @@ DIR_MIGRACOES = RAIZ_BACKEND.parent / "supabase" / "migrations"
 SENHA_APP = os.getenv("STELLSPY_APP_PASSWORD", "dev-local-app-password")
 os.environ.setdefault("STELLSPY_APP_PASSWORD", SENHA_APP)
 
+# Senha da role de leitura do painel. Só existe para o teste conseguir conectar
+# como `stellspy_dashboard`; sem ela a migração cria a role NOLOGIN.
+SENHA_DASHBOARD = os.getenv("STELLSPY_DASHBOARD_PASSWORD", "dev-local-dashboard-password")
+os.environ.setdefault("STELLSPY_DASHBOARD_PASSWORD", SENHA_DASHBOARD)
+
 URL_OWNER = os.getenv(
     "STELLSPY_TEST_DB_OWNER",
     "postgresql+psycopg2://stellspy_owner:stellspy_dev@localhost:55432/stellspy",
@@ -51,6 +56,10 @@ URL_OWNER = os.getenv(
 URL_APP = os.getenv(
     "STELLSPY_TEST_DB_APP",
     f"postgresql+psycopg2://stellspy_app:{SENHA_APP}@localhost:55432/stellspy",
+)
+URL_DASHBOARD = os.getenv(
+    "STELLSPY_TEST_DB_DASHBOARD",
+    f"postgresql+psycopg2://stellspy_dashboard:{SENHA_DASHBOARD}@localhost:55432/stellspy",
 )
 
 
@@ -98,6 +107,14 @@ def banco_limpo(sql_owner: Any) -> Iterator[Any]:
 def sql_app(banco_limpo: Any) -> Iterator[Any]:
     """Engine com a role de aplicação: sem BYPASSRLS, sujeita às policies."""
     engine = create_engine(URL_APP, future=True)
+    yield engine
+    engine.dispose()
+
+
+@pytest.fixture(scope="session")
+def sql_dashboard(banco_limpo: Any) -> Iterator[Any]:
+    """Engine com a role do painel: só SELECT, e só do tenant da transação."""
+    engine = create_engine(URL_DASHBOARD, future=True)
     yield engine
     engine.dispose()
 

@@ -8,12 +8,14 @@ Execução (raiz do repo):
   set PYTHONPATH=backend
   streamlit run dashboard/app.py
 
-Requer DASHBOARD_DATABASE_URL (credencial de back-office) e, opcionalmente,
-DASHBOARD_PASSWORD.
+Requer:
+  DASHBOARD_DATABASE_URL  — conexão da role `stellspy_dashboard` (SELECT, sob RLS)
+  DASHBOARD_TENANT_ID     — UUID da construtora do piloto
+  DASHBOARD_PASSWORD      — opcional, senha de entrada do painel
 
-Como as tabelas estão sob FORCE RLS, o dashboard — que lista obras de todos os
-tenants — precisa de uma credencial de back-office em `DASHBOARD_DATABASE_URL`.
-Sem ela, a conexão da API (`stellspy_app`) devolve zero obras e o app avisa.
+A credencial é presa a **uma** construtora: a transação declara
+`app.tenant_id` com esse UUID e o RLS filtra o resto. Credencial de superusuário
+ou com BYPASSRLS é recusada — o piloto não precisa enxergar outros clientes.
 """
 
 from __future__ import annotations
@@ -41,22 +43,24 @@ from dashboard.queries import (
     get_engine,
     listar_obras,
 )
+from dashboard.diagnostico import normalizar_tenant, problemas_da_credencial
 
 
 @st.cache_data(ttl=300, show_spinner="Conexão…")
-def _cached_diagnostico(database_url: str):
-    return diagnostico_conexao(get_engine(database_url))
+def _cached_diagnostico(database_url: str, tenant_id: str):
+    return diagnostico_conexao(get_engine(database_url), tenant_id)
 
 
 @st.cache_data(ttl=300, show_spinner="Obras…")
-def _cached_listar_obras(database_url: str):
-    return listar_obras(get_engine(database_url))
+def _cached_listar_obras(database_url: str, tenant_id: str):
+    return listar_obras(get_engine(database_url), tenant_id)
 
 
 @st.cache_data(ttl=120, show_spinner="Itens…")
-def _cached_nfe_itens(database_url: str, obra_id: str, d0_iso: str, d1_iso: str):
+def _cached_nfe_itens(database_url: str, tenant_id: str, obra_id: str, d0_iso: str, d1_iso: str):
     return carregar_nfe_itens_periodo(
         get_engine(database_url),
+        tenant_id=tenant_id,
         obra_id=obra_id,
         d0=date.fromisoformat(d0_iso),
         d1=date.fromisoformat(d1_iso),
@@ -64,9 +68,10 @@ def _cached_nfe_itens(database_url: str, obra_id: str, d0_iso: str, d1_iso: str)
 
 
 @st.cache_data(ttl=120, show_spinner="NF-e…")
-def _cached_nfes_resumo(database_url: str, obra_id: str, d0_iso: str, d1_iso: str):
+def _cached_nfes_resumo(database_url: str, tenant_id: str, obra_id: str, d0_iso: str, d1_iso: str):
     return carregar_nfes_resumo(
         get_engine(database_url),
+        tenant_id=tenant_id,
         obra_id=obra_id,
         d0=date.fromisoformat(d0_iso),
         d1=date.fromisoformat(d1_iso),
@@ -141,31 +146,48 @@ def main() -> None:
     if not _check_password():
         return
 
-    db_url = (os.getenv("DASHBOARD_DATABASE_URL") or os.getenv("DATABASE_URL") or "").strip()
+    db_url = (os.getenv("DASHBOARD_DATABASE_URL") or "").strip()
     if not db_url:
         st.error(
-            "Defina `DASHBOARD_DATABASE_URL` com uma credencial de back-office "
-            "(leitura cross-tenant). A `DATABASE_URL` da API usa a role operacional "
-            "`stellspy_app`, sujeita a RLS."
+            "Defina `DASHBOARD_DATABASE_URL` com a conexão da role de leitura "
+            "`stellspy_dashboard`. A `DATABASE_URL` da API é da role operacional e "
+            "não serve aqui: o painel não usa credencial de escrita."
         )
         st.stop()
 
-    diag = _cached_diagnostico(db_url)
-    if diag["obras_visiveis"] == 0 and not (diag["superusuario"] or diag["bypass_rls"]):
-        # Zero obras aqui não significa banco vazio: significa RLS sem contexto.
-        # Dizer "nenhuma obra no banco" faria alguém procurar um problema que não existe.
+    tenant = normalizar_tenant(os.getenv("DASHBOARD_TENANT_ID"))
+    if tenant is None:
         st.error(
-            "A conexão do dashboard está sujeita a RLS e não tem contexto de tenant, "
-            "então nenhuma obra é visível. Use uma credencial de back-office em "
-            "`DASHBOARD_DATABASE_URL`; a role da aplicação continua sem BYPASSRLS."
+            "Defina `DASHBOARD_TENANT_ID` com o UUID da construtora do piloto. "
+            "Sem tenant o RLS não devolve obra nenhuma — e esse é o comportamento "
+            "correto."
         )
-        st.caption(f"usuário conectado: {diag['usuario']} · obras visíveis: 0")
         st.stop()
 
+    diag = _cached_diagnostico(db_url, tenant)
+    problemas = problemas_da_credencial(diag)
+    if problemas:
+        st.error("A credencial do painel não tem o privilégio mínimo:")
+        for problema in problemas:
+            st.error(f"— {problema}")
+        st.caption(
+            f"usuário conectado: {diag['usuario']} · superuser: {diag['superusuario']} "
+            f"· bypassrls: {diag['bypass_rls']} · escreve em obras: {diag['pode_escrever']}"
+        )
+        st.stop()
+
+    nome_construtora = (diag.get("construtora") or "").strip()
     st.sidebar.title("Filtros")
-    obras = _cached_listar_obras(db_url)
+    st.sidebar.caption(
+        f"Construtora: {nome_construtora or tenant} · "
+        f"{diag['obras_visiveis']} obra(s) visível(is)"
+    )
+    obras = _cached_listar_obras(db_url, tenant)
     if obras.empty:
-        st.warning("Nenhuma obra no banco.")
+        st.warning(
+            "Esta construtora não tem obra cadastrada. O painel não lista outras "
+            "construtoras por desenho — a credencial é presa a um tenant."
+        )
         st.stop()
 
     nome_por_id = dict(zip(obras["obra_id"], obras["nome"]))
@@ -193,9 +215,9 @@ def main() -> None:
     )
 
     d0s, d1s = d0.isoformat(), d1.isoformat()
-    df_itens = _cached_nfe_itens(db_url, obra_sel, d0s, d1s)
+    df_itens = _cached_nfe_itens(db_url, tenant, obra_sel, d0s, d1s)
     df_itens = _adicionar_metros_est(df_itens)
-    df_nf = _cached_nfes_resumo(db_url, obra_sel, d0s, d1s)
+    df_nf = _cached_nfes_resumo(db_url, tenant, obra_sel, d0s, d1s)
 
     _kpi_row(df_itens)
 

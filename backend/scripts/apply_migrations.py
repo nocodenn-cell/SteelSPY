@@ -64,17 +64,23 @@ def ler_env(caminho: Path | None) -> dict[str, str]:
     return valores
 
 
-def conectar(url: str, app_password: str | None = None):
+def conectar(url: str, app_password: str | None = None, dashboard_password: str | None = None):
     """
-    Abre a conexão e, se houver senha de aplicação, publica a configuração que
-    a migração M23 lê (`stellspy.app_password`). Assim a senha nunca vive no
-    repositório: ela vem do ambiente do executor.
+    Abre a conexão e, se houver senhas, publica as configurações que as
+    migrações M23 e M31 leem (`stellspy.app_password` e
+    `stellspy.dashboard_password`). Assim nenhuma senha vive no repositório:
+    elas vêm do ambiente do executor.
     """
     conn = psycopg2.connect(normalizar_url(url))
-    if app_password:
-        with conn.cursor() as cur:
+    with conn.cursor() as cur:
+        if app_password:
             # false = escopo de sessão: vale para todas as migrações desta execução.
             cur.execute("SELECT set_config('stellspy.app_password', %s, false)", (app_password,))
+        if dashboard_password:
+            cur.execute(
+                "SELECT set_config('stellspy.dashboard_password', %s, false)",
+                (dashboard_password,),
+            )
     return conn
 
 
@@ -86,7 +92,7 @@ def versoes_aplicadas(conn) -> set[str]:
     # o commit é feito pelo chamador
 
 
-ROLES_SEM_DDL = frozenset({"stellspy_app", "anon", "authenticated"})
+ROLES_SEM_DDL = frozenset({"stellspy_app", "stellspy_dashboard", "anon", "authenticated"})
 
 
 def validar_role_migracao(conn) -> None:
@@ -168,7 +174,13 @@ def main(argv: list[str] | None = None) -> int:
         or ""
     ).strip() or None
 
-    conn = conectar(url, app_password)
+    dashboard_password = (
+        os.getenv("STELLSPY_DASHBOARD_PASSWORD")
+        or valores.get("STELLSPY_DASHBOARD_PASSWORD")
+        or ""
+    ).strip() or None
+
+    conn = conectar(url, app_password, dashboard_password)
     try:
         try:
             validar_role_migracao(conn)

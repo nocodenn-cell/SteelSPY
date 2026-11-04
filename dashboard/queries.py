@@ -1,26 +1,32 @@
 """
 Consultas somente leitura ao Postgres (mesmo schema da API).
 
-O dashboard cruza tenants por definição (lista todas as obras). Com as tabelas
-sob `FORCE ROW LEVEL SECURITY`, a role operacional `stellspy_app` só vê a obra
-do tenant definido na transação — sem contexto, a lista volta vazia. Por isso o
-dashboard precisa de uma credencial de back-office (`DASHBOARD_DATABASE_URL`) e
-avisa quando a conexão recebida está sujeita a RLS.
+O painel lê como `stellspy_dashboard`: SELECT em cinco tabelas, sob RLS, com
+`app.tenant_id` fixado na transação pelo `DASHBOARD_TENANT_ID`. Não existe
+credencial que atravesse construtoras — um piloto com uma construtora não
+precisa de acesso às outras.
+
+O SQL fica em `dashboard/leitura.py` (sem pandas) porque é ele que os testes de
+isolamento exercitam com uma conexão real. Este módulo é a camada fina que o
+Streamlit consome.
 """
 
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta, time, timezone
+from datetime import date
 
 import pandas as pd
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
 
-from dashboard.diagnostico import diagnostico_conexao
+from dashboard import leitura
+from dashboard.diagnostico import conexao_do_tenant, diagnostico_conexao
 
 __all__ = [
     "diagnostico_conexao",
+    "conexao_do_tenant",
     "get_engine",
+    "construtora",
     "listar_obras",
     "carregar_nfe_itens_periodo",
     "carregar_nfes_resumo",
@@ -31,89 +37,38 @@ def get_engine(database_url: str) -> Engine:
     return create_engine(database_url, pool_pre_ping=True)
 
 
-def listar_obras(engine: Engine) -> pd.DataFrame:
-    q = text(
-        """
-        SELECT id::text AS obra_id, nome, cnpj_destinatario
-        FROM obras
-        ORDER BY nome
-        """
-    )
-    return pd.read_sql(q, engine)
+def construtora(engine: Engine, tenant_id: str) -> dict | None:
+    with conexao_do_tenant(engine, tenant_id) as conn:
+        return leitura.construtora(conn)
+
+
+def listar_obras(engine: Engine, tenant_id: str) -> pd.DataFrame:
+    with conexao_do_tenant(engine, tenant_id) as conn:
+        linhas = leitura.listar_obras(conn)
+    return pd.DataFrame(linhas, columns=["obra_id", "nome", "cnpj_destinatario"])
 
 
 def carregar_nfe_itens_periodo(
     engine: Engine,
     *,
+    tenant_id: str,
     obra_id: str,
     d0: date,
     d1: date,
 ) -> pd.DataFrame:
-    """Intervalo [d0 00:00 UTC, d1+1 00:00 UTC) — inclusive nos dias escolhidos."""
-    start = datetime.combine(d0, time.min, tzinfo=timezone.utc)
-    end_excl = datetime.combine(d1 + timedelta(days=1), time.min, tzinfo=timezone.utc)
-
-    q = text(
-        """
-        SELECT
-          nl.id::text AS nfe_log_id,
-          nl.chave_acesso,
-          nl.processado_em,
-          nl.status_conferencia AS status_nf,
-          nl.tipo AS tipo_nf,
-          ni.item_numero,
-          ni.bitola_recebida,
-          ni.marca_recebida,
-          ni.quantidade_recebida,
-          ni.unidade_recebida,
-          ni.status_item,
-          ni.especificacao_id::text AS especificacao_id,
-          e.qtd_planejada_metros,
-          e.bitola_mm AS esp_bitola_mm,
-          e.marca_exigida
-        FROM nfe_itens ni
-        INNER JOIN nfe_logs nl ON nl.id = ni.nfe_log_id
-        LEFT JOIN especificacoes e ON e.id = ni.especificacao_id
-        WHERE nl.obra_id = CAST(:obra AS uuid)
-          AND nl.processado_em >= :t0
-          AND nl.processado_em < :t1
-          AND nl.status_conferencia <> 'PENDENTE'
-        ORDER BY nl.processado_em, ni.item_numero
-        """
-    )
-    return pd.read_sql(
-        q,
-        engine,
-        params={"obra": obra_id, "t0": start, "t1": end_excl},
-    )
+    with conexao_do_tenant(engine, tenant_id) as conn:
+        linhas = leitura.nfe_itens_periodo(conn, obra_id=obra_id, d0=d0, d1=d1)
+    return pd.DataFrame(linhas)
 
 
 def carregar_nfes_resumo(
     engine: Engine,
     *,
+    tenant_id: str,
     obra_id: str,
     d0: date,
     d1: date,
 ) -> pd.DataFrame:
-    start = datetime.combine(d0, time.min, tzinfo=timezone.utc)
-    end_excl = datetime.combine(d1 + timedelta(days=1), time.min, tzinfo=timezone.utc)
-
-    q = text(
-        """
-        SELECT
-          nl.id::text AS nfe_log_id,
-          nl.chave_acesso,
-          nl.processado_em,
-          nl.status_conferencia,
-          nl.tipo,
-          nl.resumo_global,
-          nl.itens_resumo
-        FROM nfe_logs nl
-        WHERE nl.obra_id = CAST(:obra AS uuid)
-          AND nl.processado_em >= :t0
-          AND nl.processado_em < :t1
-          AND nl.status_conferencia <> 'PENDENTE'
-        ORDER BY nl.processado_em DESC
-        """
-    )
-    return pd.read_sql(q, engine, params={"obra": obra_id, "t0": start, "t1": end_excl})
+    with conexao_do_tenant(engine, tenant_id) as conn:
+        linhas = leitura.nfes_resumo(conn, obra_id=obra_id, d0=d0, d1=d1)
+    return pd.DataFrame(linhas)

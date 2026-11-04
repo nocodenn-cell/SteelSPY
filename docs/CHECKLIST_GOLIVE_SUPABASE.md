@@ -21,10 +21,13 @@ senha nem `service_role`.
 | `SUPABASE_URL` | Project Settings → API | Storage/laudo |
 | `SUPABASE_ANON_KEY` | Project Settings → API (publishable) | cliente, se usado |
 | `SUPABASE_SERVICE_ROLE_KEY` | Project Settings → API (secret) | **só servidor** (`EVIDENCIAS_STORAGE=supabase`) |
-| `DASHBOARD_DATABASE_URL` | credencial de back-office (ex.: owner), **não** a role da API | dashboard Streamlit (leitura cross-tenant) |
+| `DASHBOARD_DATABASE_URL` | role `stellspy_dashboard` criada pela migration 31 (somente leitura, presa a um tenant), **não** a role da API nem `postgres` | dashboard Streamlit |
+| `STELLSPY_DASHBOARD_PASSWORD` | escolhida por você, ≥ 12 caracteres | senha da role `stellspy_dashboard` no executor de migrations |
+| `DASHBOARD_TENANT_ID` | UUID da construtora do piloto | tenant explícito do dashboard |
 
 - [ ] `DATABASE_URL` usa `stellspy_app.<ref>`, **nunca** `postgres.<ref>`.
-- [ ] `DASHBOARD_DATABASE_URL` é uma credencial distinta; o dashboard não reutiliza `DATABASE_URL`.
+- [ ] `DASHBOARD_DATABASE_URL` usa `stellspy_dashboard` (migration 31), não `postgres`/owner e não `stellspy_app`.
+- [ ] `DASHBOARD_TENANT_ID` aponta para a construtora do piloto.
 - [ ] `SUPABASE_DB_ADMIN_URL` fica fora do processo da API.
 - [ ] Nenhuma chave `service_role` em variável `NEXT_PUBLIC_*`, PWA ou log.
 
@@ -67,7 +70,7 @@ transação `READ ONLY`; nada é criado ou alterado.
 
 ---
 
-## 3. Migrações (30 arquivos, mesma trilha do repositório)
+## 3. Migrações (31 arquivos, mesma trilha do repositório)
 
 Não existe um segundo sistema de migração: `backend/scripts/apply_migrations.py`
 aplica `supabase/migrations/*.sql` em ordem, uma transação por arquivo, e registra
@@ -81,11 +84,17 @@ python scripts/apply_migrations.py --env-file .env
 
 - [x] Pooler em modo **sessão** (porta 5432): a senha da role é configurada por sessão.
 - [x] Projeto novo: 30 pendentes, todas aplicadas (0 → 30/30, 2026-11-04 16:51 UTC).
+- [ ] Migration **31** (`20261104170000_dashboard_role.sql`): pendente no remoto;
+      localmente entra na suíte de integração. Cria `stellspy_dashboard`
+      (`NOLOGIN` sem senha, `NOSUPERUSER`, `NOBYPASSRLS`, `NOINHERIT`), concede
+      apenas `SELECT` em `construtoras`, `obras`, `nfe_logs`, `nfe_itens` e
+      `especificacoes`.
 - [x] Projeto com histórico: só as pendentes rodam; não há `DROP` nem `TRUNCATE`.
-- [x] Reexecutar: `pendentes: 0` (idempotente).
+- [x] Reexecutar: `pendentes: 0` (idempotente) — repetir após a 31.
 
 A migração 30 cria o bucket privado `evidencias`. Em PostgreSQL puro (sem schema
-`storage`) ela apenas registra e segue.
+`storage`) ela apenas registra e segue. A migration 31 é *fail-closed*: sem
+`STELLSPY_DASHBOARD_PASSWORD` (≥ 12 caracteres), a role fica `NOLOGIN`.
 
 A migração 15 reconhece quando a role `stellspy_app` já existe: em vez de tentar
 `ALTER ROLE ... NOSUPERUSER` (que exige superuser), ela **verifica** que a role
@@ -150,8 +159,12 @@ curl -s -X POST "$BASE/conferir" \
 - [ ] `CORS_ALLOW_ORIGINS` com origens exatas (vazio; definir antes do deploy).
 - [x] Role `stellspy_app`: `NOSUPERUSER`, `NOBYPASSRLS`, sem `CREATEROLE`.
 - [x] RLS habilitada e `FORCE` nas tabelas com `tenant_id` (20/20 + 20 políticas).
+- [ ] Role `stellspy_dashboard`: `NOBYPASSRLS`, sem escrita, `SELECT` em 5 tabelas
+      (teste local `test_dashboard_rls.py`; falta aplicar a 31 no remoto).
 - [ ] Sem `service_role` em código de cliente.
 - [ ] Chave que apareceu em chat/issue deve ser rotacionada no painel.
+- [ ] `python scripts/auditar_publicacao.py` → **0 bloqueios** antes do deploy
+      (varre `.env` e arquivos versionados atrás de segredo real, sem imprimir valor).
 
 ---
 

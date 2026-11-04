@@ -7,13 +7,20 @@
 pip install -r dashboard/requirements.txt
 
 # 2. Configurar variáveis (o dashboard NÃO usa a credencial da API)
-# DASHBOARD_DATABASE_URL — obrigatório, credencial de back-office (ex.: owner)
-# DASHBOARD_PASSWORD — opcional (tela de login)
+# DASHBOARD_DATABASE_URL — obrigatório: conexão da role stellspy_dashboard
+# DASHBOARD_TENANT_ID    — obrigatório: UUID da construtora do piloto
+# DASHBOARD_PASSWORD     — opcional (tela de login)
 #
-# A `DATABASE_URL` da API usa `stellspy_app`, sujeita a RLS: sem contexto de
-# tenant ela vê zero obras, o que é correto para a API e inútil para o
-# dashboard. O diagnóstico na inicialização recusa essa credencial em vez de
-# exibir gráficos vazios.
+# A role `stellspy_dashboard` é criada pela migração
+# 20261104170000_dashboard_role.sql: LOGIN só quando
+# STELLSPY_DASHBOARD_PASSWORD está definida no executor de migrações; SELECT
+# apenas em construtoras, obras, nfe_logs, nfe_itens e especificacoes; sujeita
+# a RLS/FORCE (sem BYPASSRLS). A transação declara app.tenant_id com
+# DASHBOARD_TENANT_ID, então o painel vê **uma** construtora.
+#
+# A `DATABASE_URL` da API usa `stellspy_app`, que tem escrita: não serve para o
+# painel. Credencial de superusuário ou com BYPASSRLS é recusada na
+# inicialização, com a correção dita na tela.
 
 # 3. Na raiz do repositório
 set PYTHONPATH=backend
@@ -47,12 +54,18 @@ Linux/macOS: `export PYTHONPATH=backend`
 
 - Login opcional via `DASHBOARD_PASSWORD` (comparação de digest com `hmac.compare_digest` no app)
 - Acesso **direto ao Postgres** com `DASHBOARD_DATABASE_URL` — credencial distinta da API, restringir rede / VPN em produção
-- A role da aplicação (`stellspy_app`) continua **sem** `BYPASSRLS`; o dashboard nunca deve reutilizá-la
+- Menor privilégio: role `stellspy_dashboard` com **SELECT em cinco tabelas**, `NOBYPASSRLS`, `NOSUPERUSER`, `NOINHERIT`. Sem `usuarios`, `sessoes`, `evidencias`, `recebimentos` ou `fila_nfe`
+- A credencial do painel é presa a **um** tenant (`DASHBOARD_TENANT_ID`); outra construtora não aparece, mesmo que exista no banco
+- Credencial de superusuário, com `BYPASSRLS` ou com escrita é **recusada** na inicialização, com a correção dita na tela — sem painel vazio enganoso
+- A role da aplicação (`stellspy_app`) nunca deve ser reutilizada no painel: ela tem escrita
 - Cache **`@st.cache_data`** (TTL 120–300 s) para reduzir carga no banco ao navegar filtros
-- Se a conexão não atravessar tenants, a tela para com mensagem explícita (usuário conectado e 0 obras), em vez de mostrar painel vazio
+- Testes de isolamento: `backend/tests/integration/test_dashboard_rls.py` (role mínima, sem tenant = zero obras, tenant A × B, escrita negada)
 
 ## Checklist produção (sugestão)
 
+- [ ] `STELLSPY_DASHBOARD_PASSWORD` definida **no executor de migrações** (sem ela a role fica `NOLOGIN`)
+- [ ] `DASHBOARD_DATABASE_URL` com a role `stellspy_dashboard`, nunca owner/superuser
+- [ ] `DASHBOARD_TENANT_ID` com o UUID da construtora do piloto
 - [ ] Dashboard publicado em URL interna ou protegida (ex.: `https://dashboard.seudominio.com`)
 - [ ] `DASHBOARD_PASSWORD` definido se exposto à internet
 - [ ] Documentação para o cliente: como interpretar scatter (excesso/falta vs diagonal) e pizza (volume por status)
