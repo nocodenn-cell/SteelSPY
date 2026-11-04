@@ -1,12 +1,15 @@
 # PROGRESS — SteelSPY 2.0
 
-> Atualizado em 2026-11-03. Fonte de verdade do estado de execução contínua.
+> Atualizado em 2026-11-04. Fonte de verdade do estado de execução contínua.
 
 ## Fase atual
 
 **FASE B — integração ao Supabase oficial (`akvbtceshpsvsuacueaq`).**
-Sprint 4 homologada localmente sobre o próprio stack Supabase (PostgreSQL 17.11);
-a execução no projeto remoto continua **bloqueada** por credenciais (ver Bloqueios).
+Sprint 4 homologada localmente sobre o próprio stack Supabase (PostgreSQL 17.11).
+O destravamento remoto avançou até onde não depende da senha administrativa:
+projeto, Auth, REST e Storage respondem; a role operacional **não existe** no
+projeto remoto e o único bloqueio restante é a senha real do usuário
+`postgres.<ref>` (ver Bloqueios).
 
 ## Concluído
 
@@ -27,11 +30,16 @@ a execução no projeto remoto continua **bloqueada** por credenciais (ver Bloqu
 | Sprint 5 (prep) | suíte completa após a preparação | **497 passed** (495 no CI + 2 marcados `supabase_local`) |
 | Sprint 4 (B) | prova HML no Supabase local | diagnóstico + semeadura + **12/12 PASS** com `stellspy_app` |
 | Sprint 4 (B) | compatibilidade do runner com admin não-superuser | M15 verifica atributos em vez de `ALTER ROLE` (no Supabase `postgres` tem BYPASSRLS, mas não é superuser) |
+| Destravamento (B) | verificador de configuração sem expor segredos | `scripts/verificar_env_supabase.py`: 1 bloqueio (senha admin), 2 avisos; `.env` confirmado no `.gitignore` |
+| Destravamento (B) | diagnóstico deixa de quebrar com URL-modelo | `problema_na_url_postgres` valida antes do parser; 17 testes do diagnóstico verdes |
+| Destravamento (B) | identidade e serviços remotos confirmados (read-only) | `/auth/v1/settings`, `/rest/v1/` e `/storage/v1/bucket` → 200 com `sb-project-ref: akvbtceshpsvsuacueaq`; buckets remotos: `[]` |
+| Destravamento (B) | rede do pooler e ausência da role operacional | DNS + TCP `aws-0-us-east-2.pooler.supabase.com:5432` OK; login `stellspy_app.<ref>` → `user not found in the database` |
+| Destravamento (B) | configuração local corrigida | senha da role gerada com 43 caracteres; `DATABASE_URL` aponta para pooler real:5432; `EVIDENCIAS_STORAGE=supabase` |
 
 ## Pendente
 
-- Preencher `backend/.env` com `SUPABASE_DB_ADMIN_URL`, `DATABASE_URL` (role app),
-  `STELLSPY_APP_PASSWORD`, `SUPABASE_URL` e `SUPABASE_SERVICE_ROLE_KEY`.
+- Substituir **apenas** a senha-modelo de `SUPABASE_DB_ADMIN_URL` pela senha real
+  de `postgres.<ref>` (painel → Database → Connection string → Session pooler).
 - Rodar diagnóstico remoto, revisar divergências e aplicar as migrations pendentes.
 - Rodar `hml_staging.py --acao tudo` no projeto oficial e reexecutar para idempotência.
 - Homologação funcional HTTP + PWA contra o banco oficial (o fluxo já passa localmente).
@@ -44,8 +52,9 @@ a execução no projeto remoto continua **bloqueada** por credenciais (ver Bloqu
 
 | Bloqueio | O que falta |
 |----------|-------------|
-| Diagnóstico remoto | `SUPABASE_DB_ADMIN_URL` + `SUPABASE_SERVICE_ROLE_KEY` em `backend/.env` (não colar no chat; arquivo ignorado) |
-| Region/versão remota | só são conhecidas após a conexão (pooler revela a região no host) |
+| Diagnóstico remoto | senha real de `postgres.akvbtceshpsvsuacueaq` dentro de `SUPABASE_DB_ADMIN_URL` (o valor atual é `[SENHA_POSTGRES]`). Colocar em `backend/.env`, nunca no chat |
+| Mutações remotas | sem a credencial acima não há como criar a role, aplicar as 30 migrations, criar o bucket ou provar RLS no projeto oficial |
+| Suíte de integração nesta sessão | Docker Desktop parado; os 177 testes de integração exigem o container PostgreSQL em 55432 (evidência anterior segue válida) |
 | VC-01 em campo | fotografias do cenário real de recebimento e GPU (RTX 4070 não presente nesta máquina) |
 | Sprint 5 dados | ≥ 60 obras / ≥ 600 fotos rotuladas; sem isso, não há métrica honesta |
 
@@ -56,12 +65,20 @@ a execução no projeto remoto continua **bloqueada** por credenciais (ver Bloqu
 
 ## Próxima ação automática
 
-Assim que `backend/.env` existir:
+1. Conferir a configuração local sem expor segredos:
 
-```
-cd backend && python scripts/diagnostico_supabase.py
-```
+   ```
+   cd backend && python scripts/verificar_env_supabase.py
+   ```
 
-Se `migrations_pendentes` contiver arquivos, revisar o diff e só então aplicar
-com `apply_migrations.py --url "$SUPABASE_DB_ADMIN_URL"`. Nenhuma operação
-destrutiva é autorizada.
+   Hoje: `1 bloqueio` — `SUPABASE_DB_ADMIN_URL` com placeholder.
+
+2. Assim que a senha real estiver no `.env`, rodar o diagnóstico read-only:
+
+   ```
+   cd backend && python scripts/diagnostico_supabase.py
+   ```
+
+3. Se `migrations_pendentes` contiver arquivos, revisar o diff e só então aplicar
+   com `apply_migrations.py --url "$SUPABASE_DB_ADMIN_URL"`. Nenhuma operação
+   destrutiva é autorizada.

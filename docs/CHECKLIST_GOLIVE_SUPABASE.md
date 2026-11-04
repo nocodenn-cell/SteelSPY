@@ -26,6 +26,13 @@ senha nem `service_role`.
 - [ ] `SUPABASE_DB_ADMIN_URL` fica fora do processo da API.
 - [ ] Nenhuma chave `service_role` em variável `NEXT_PUBLIC_*`, PWA ou log.
 
+Estado em 2026-11-04 (`backend/.env`, verificado sem exibir valores):
+
+- `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` e `PWA_SESSION_SECRET`: reais e válidos.
+- `STELLSPY_APP_PASSWORD`: gerada localmente com 43 caracteres (≥ 12).
+- `DATABASE_URL`: role operacional no pooler real, porta 5432.
+- `SUPABASE_DB_ADMIN_URL`: **bloqueada** — a senha ainda é `[SENHA_POSTGRES]`.
+
 ---
 
 ## 1. Confirmar o projeto
@@ -165,3 +172,33 @@ com as 30 migrações e a role operacional — falta repetir no projeto remoto:
 | HML `--acao tudo` | 12/12 PASS com `stellspy_app` |
 
 No banco remoto, repetir as seções 1–6 e marcar cada item.
+
+---
+
+## 9. Estado do destravamento remoto (2026-11-04)
+
+Executado só leitura, sem a senha administrativa:
+
+| Verificação | Resultado |
+|-------------|-----------|
+| Identidade do projeto | `/auth/v1/settings`, `/rest/v1/` e `/storage/v1/bucket` → **200** com `sb-project-ref: akvbtceshpsvsuacueaq` |
+| Auth | habilitado; `disable_signup=false` |
+| Buckets remotos | `[]` — o bucket `evidencias` ainda não existe (M30 cria) |
+| Pooler | DNS resolve e TCP `aws-0-us-east-2.pooler.supabase.com:5432` responde em ~0,25 s |
+| Role `stellspy_app` | **ausente** — login devolve `user not found in the database` |
+| `SUPABASE_DB_ADMIN_URL` | placeholder `[SENHA_POSTGRES]`; nenhum arquivo local tem a senha real |
+| Suíte unitária após as correções | **325 passed** |
+| Testes do diagnóstico | **17 passed** |
+
+Destrave (sem colar segredo no chat):
+
+```bash
+cd backend
+# 1) edite APENAS a senha em SUPABASE_DB_ADMIN_URL (Session pooler, usuário postgres.<ref>)
+python scripts/verificar_env_supabase.py   # precisa terminar sem BLOQUEADO
+python scripts/diagnostico_supabase.py     # read-only; gera .devtmp/supabase_oficial_diag.json
+```
+
+Depois do diagnóstico, o plano de migrations só é executado se a diferença for
+aditiva. `apply_migrations.py` recusa rodar como `stellspy_app`; a role é criada
+pela M15 e recebe a senha da M23 a partir de `STELLSPY_APP_PASSWORD`.

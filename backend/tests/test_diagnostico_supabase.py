@@ -65,6 +65,43 @@ def test_senha_e_mascarada_em_mensagem_de_erro():
     assert "***@" in mascarado
 
 
+@pytest.mark.parametrize(
+    ("url", "trecho"),
+    [
+        (
+            "postgresql://postgres.ref:senha-real@aws-0-sa-east-1.pooler.supabase.com:5432/postgres",
+            None,
+        ),
+        (
+            "postgresql://postgres.ref:[SENHA_POSTGRES]@aws-0-sa-east-1.pooler.supabase.com:5432/postgres",
+            "colchetes",
+        ),
+        (
+            "postgresql+psycopg2://stellspy_app.ref:senha@<HOST_POOLER>:5432/postgres",
+            "exemplo",
+        ),
+        ("postgresql://postgres.ref@host:5432/postgres", "senha ausente"),
+        ("mysql://postgres.ref:senha@host:5432/postgres", "esquema"),
+        ("postgresql://postgres.ref:senha@host:5432", "banco ausente"),
+    ],
+)
+def test_problema_na_url_postgres(url: str, trecho: str | None):
+    motivo = diag.problema_na_url_postgres(url)
+    if trecho is None:
+        assert motivo is None
+    else:
+        assert motivo is not None
+        assert trecho in motivo
+
+
+def test_motivo_da_url_nao_devolve_senha():
+    motivo = diag.problema_na_url_postgres(
+        "postgresql+psycopg2://stellspy_app.ref:segredo123@<HOST_POOLER>:5432/postgres"
+    )
+    assert motivo is not None
+    assert "segredo123" not in motivo
+
+
 def test_env_file_nao_sobrescreve_ambiente(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     arquivo = tmp_path / ".env"
     arquivo.write_text("SUPABASE_URL=https://arquivo.supabase.co\nNOVA_CHAVE=abc\n", encoding="utf-8")

@@ -72,6 +72,37 @@ def mascarar(texto: str) -> str:
     return _RE_SEGREDO.sub(r"\1***@", texto)
 
 
+_PLACEHOLDERS = ("<host", "sua_senha", "coloque", "preencha", "changeme", "senha_aqui")
+
+
+def problema_na_url_postgres(url: str) -> str | None:
+    """Motivo pelo qual a URL não serve para conectar, ou None se parece válida.
+
+    Nunca devolve o valor da senha: só descreve o defeito. Colchetes são
+    rejeitados porque `urlsplit` os interpreta como host IPv6 e lança
+    ValueError — um placeholder `[SENHA]` derrubava o script com traceback.
+    """
+    if "[" in url or "]" in url:
+        return "a URL contém colchetes — placeholder não substituído ou senha sem codificação"
+    if any(marca in url.lower() for marca in _PLACEHOLDERS):
+        return "há texto de exemplo no lugar de host ou senha"
+    try:
+        partes = urlparse(normalizar_url(url))
+    except ValueError as exc:
+        return f"URL inválida ({type(exc).__name__})"
+    if partes.scheme not in ("postgres", "postgresql"):
+        return f"esquema inesperado {partes.scheme!r}; use postgresql://"
+    if not partes.username:
+        return "usuário ausente"
+    if not partes.password:
+        return "senha ausente"
+    if not partes.hostname:
+        return "host ausente"
+    if not (partes.path or "").strip("/"):
+        return "nome do banco ausente"
+    return None
+
+
 def ref_da_url(url: str) -> str | None:
     host = (urlparse((url or "").strip()).hostname or "").lower()
     encontrado = re.fullmatch(r"([a-z0-9]{20})\.supabase\.co", host)
@@ -373,6 +404,16 @@ def main(argv: list[str] | None = None) -> int:
             "BLOQUEADO: SUPABASE_DB_ADMIN_URL ausente. Copie a URI do pooler "
             "(Project Settings → Database → Connection string → Session pooler) "
             "para backend/.env.",
+            file=sys.stderr,
+        )
+        return 2
+    defeito = problema_na_url_postgres(admin_url)
+    if defeito:
+        print(
+            f"BLOQUEADO: SUPABASE_DB_ADMIN_URL não conecta — {defeito}. "
+            "Substitua na cópia local (backend/.env) pela URI real do "
+            "Project Settings > Database > Connection string > Session pooler; "
+            "nada foi conectado ou alterado.",
             file=sys.stderr,
         )
         return 2
