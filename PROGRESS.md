@@ -23,6 +23,8 @@ a execução no projeto remoto continua **bloqueada** por credenciais (ver Bloqu
 | Sprint 4 (B) | stack Supabase local (`supabase/config.toml`, portas 544xx) com as 30 migrações e bucket privado | PG 17.11; 20 tabelas com RLS + FORCE; `evidencias public=false` |
 | Sprint 4 (B) | suíte de integração inteira contra o banco do Supabase local com a role operacional | **177 passed** (RLS multiempresa, auth/sessão/CSRF/RBAC, pedidos, NF-e, recebimento parcial, evidências, dossiê) |
 | Sprint 4 (B) | suíte completa do backend | **476 passed** (inclui Storage real e E2E API → bucket privado → download) |
+| Sprint 5 (prep) | contratos executáveis de dataset e métricas, sem modelo | `backend/exp_vc02/` + 21 testes; `docs/sprint5/PLANO_SPRINT5.md` |
+| Sprint 5 (prep) | suíte completa após a preparação | **497 passed** |
 | Sprint 4 (B) | prova HML no Supabase local | diagnóstico + semeadura + **12/12 PASS** com `stellspy_app` |
 | Sprint 4 (B) | compatibilidade do runner com admin não-superuser | M15 verifica atributos em vez de `ALTER ROLE` (no Supabase `postgres` tem BYPASSRLS, mas não é superuser) |
 
@@ -33,7 +35,9 @@ a execução no projeto remoto continua **bloqueada** por credenciais (ver Bloqu
 - Rodar diagnóstico remoto, revisar divergências e aplicar as migrations pendentes.
 - Rodar `hml_staging.py --acao tudo` no projeto oficial e reexecutar para idempotência.
 - Homologação funcional HTTP + PWA contra o banco oficial (o fluxo já passa localmente).
-- Sprint 5 (visão) apenas após o aceite remoto, sem integrar modelo não validado.
+- Sprint 5: coletar e anonimizar fotografias do recebimento real; depois anotar,
+  treinar e avaliar — nenhum modelo entra no produto sem os portões de
+  `exp_vc02` (métricas + validação humana).
 - Fases D (inteligência de auditoria), E (documental), F (offline), G (comercial).
 
 ## Bloqueios
@@ -43,10 +47,11 @@ a execução no projeto remoto continua **bloqueada** por credenciais (ver Bloqu
 | Diagnóstico remoto | `SUPABASE_DB_ADMIN_URL` + `SUPABASE_SERVICE_ROLE_KEY` em `backend/.env` (não colar no chat; arquivo ignorado) |
 | Region/versão remota | só são conhecidas após a conexão (pooler revela a região no host) |
 | VC-01 em campo | fotografias do cenário real de recebimento e GPU (RTX 4070 não presente nesta máquina) |
+| Sprint 5 dados | ≥ 60 obras / ≥ 600 fotos rotuladas; sem isso, não há métrica honesta |
 
 ## Último commit
 
-`9ea5292` — fix(supabase): role idempotente para admin não-superuser e Storage homologado.
+`37727b7` — test(storage): E2E real da API com o bucket privado do Supabase.
 
 ## Próxima ação automática
 
