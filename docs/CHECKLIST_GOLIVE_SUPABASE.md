@@ -79,6 +79,11 @@ python scripts/apply_migrations.py --url "$SUPABASE_DB_ADMIN_URL"
 A migração 30 cria o bucket privado `evidencias`. Em PostgreSQL puro (sem schema
 `storage`) ela apenas registra e segue.
 
+A migração 15 reconhece quando a role `stellspy_app` já existe: em vez de tentar
+`ALTER ROLE ... NOSUPERUSER` (que exige superuser), ela **verifica** que a role
+não tem `SUPERUSER` nem `BYPASSRLS` e falha se tiver. Isso é necessário porque o
+`postgres` do Supabase tem `BYPASSRLS`, mas não é superuser.
+
 ---
 
 ## 4. Prova de isolamento multiempresa
@@ -138,3 +143,24 @@ curl -s -X POST "$BASE/conferir" \
 - [ ] RLS habilitada e `FORCE` nas tabelas com `tenant_id`.
 - [ ] Sem `service_role` em código de cliente.
 - [ ] Chave que apareceu em chat/issue deve ser rotacionada no painel.
+
+---
+
+## 8. Evidência local já obtida (Sprint 4)
+
+Executado no stack Supabase local (`supabase start`, PostgreSQL 17.11, portas 544xx),
+com as 30 migrações e a role operacional — falta repetir no projeto remoto:
+
+| Verificação | Resultado |
+|-------------|-----------|
+| `schema_migrations` | 30/30 aplicadas |
+| Tabelas com RLS + `FORCE` | 20 |
+| Políticas RLS | 20 |
+| Role `stellspy_app` | `NOBYPASSRLS`, `NOSUPERUSER` |
+| Bucket `evidencias` | privado (`public=false`), 12 MiB, JPEG/PNG |
+| Suíte de integração | 177 passed (RLS, auth, pedidos, NF-e, recebimento, evidências, dossiê) |
+| Suíte completa do backend | 475 passed |
+| Storage real (upload/leitura/duplicado/remoção) | 1 passed contra a API local |
+| HML `--acao tudo` | 12/12 PASS com `stellspy_app` |
+
+No banco remoto, repetir as seções 1–6 e marcar cada item.

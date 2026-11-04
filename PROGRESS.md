@@ -5,8 +5,8 @@
 ## Fase atual
 
 **FASE B — integração ao Supabase oficial (`akvbtceshpsvsuacueaq`).**
-Bootstrap, RLS e Storage privado provados localmente; diagnóstico remoto
-**bloqueado** por credenciais (ver Bloqueios).
+Sprint 4 homologada localmente sobre o próprio stack Supabase (PostgreSQL 17.11);
+a execução no projeto remoto continua **bloqueada** por credenciais (ver Bloqueios).
 
 ## Concluído
 
@@ -17,9 +17,14 @@ Bootstrap, RLS e Storage privado provados localmente; diagnóstico remoto
 | HML (B) | `backend/scripts/hml_staging.py`: diagnóstico read-only, semeadura HML idempotente e prova de isolamento com a role da aplicação | `stellspy_demo`: 12/12 PASS; reexecução sem duplicar |
 | Oficial (B) | projeto Supabase confirmado (`sb-project-ref: akvbtceshpsvsuacueaq`) e declarado oficial | cabeçalho do gateway + decisão do proprietário (2026-11-03) |
 | Oficial (B) | banco vazio → 30 migrations → role `stellspy_app` → prova RLS | PostgreSQL 16.15 e 17.11 locais: 30/30 aplicadas; HML 12/12 PASS nas duas versões |
-| Oficial (B) | Storage privado de evidências (bucket `evidencias`, chave por tenant/obra) | `armazenamento.py` + migração M30; 16 testes unitários + integração PostgreSQL |
+| Oficial (B) | Storage privado de evidências (bucket `evidencias`, chave por tenant/obra) | `armazenamento.py` + migração M30; 18 testes unitários + teste real contra o Storage do Supabase local |
 | Oficial (B) | diagnóstico read-only e trava do runner contra role operacional | `scripts/diagnostico_supabase.py`, `apply_migrations.validar_role_migracao` |
 | Oficial (B) | `DATABASE_URL` da aplicação separada da URL administrativa | `backend/.env.example`, `docs/CHECKLIST_GOLIVE_SUPABASE.md` |
+| Sprint 4 (B) | stack Supabase local (`supabase/config.toml`, portas 544xx) com as 30 migrações e bucket privado | PG 17.11; 20 tabelas com RLS + FORCE; `evidencias public=false` |
+| Sprint 4 (B) | suíte de integração inteira contra o banco do Supabase local com a role operacional | **177 passed** (RLS multiempresa, auth/sessão/CSRF/RBAC, pedidos, NF-e, recebimento parcial, evidências, dossiê) |
+| Sprint 4 (B) | suíte completa do backend | **475 passed** (inclui Storage real contra a API local do Supabase) |
+| Sprint 4 (B) | prova HML no Supabase local | diagnóstico + semeadura + **12/12 PASS** com `stellspy_app` |
+| Sprint 4 (B) | compatibilidade do runner com admin não-superuser | M15 verifica atributos em vez de `ALTER ROLE` (no Supabase `postgres` tem BYPASSRLS, mas não é superuser) |
 
 ## Pendente
 
@@ -27,7 +32,8 @@ Bootstrap, RLS e Storage privado provados localmente; diagnóstico remoto
   `STELLSPY_APP_PASSWORD`, `SUPABASE_URL` e `SUPABASE_SERVICE_ROLE_KEY`.
 - Rodar diagnóstico remoto, revisar divergências e aplicar as migrations pendentes.
 - Rodar `hml_staging.py --acao tudo` no projeto oficial e reexecutar para idempotência.
-- Homologação funcional HTTP + PWA contra o banco oficial.
+- Homologação funcional HTTP + PWA contra o banco oficial (o fluxo já passa localmente).
+- Sprint 5 (visão) apenas após o aceite remoto, sem integrar modelo não validado.
 - Fases D (inteligência de auditoria), E (documental), F (offline), G (comercial).
 
 ## Bloqueios
@@ -40,7 +46,7 @@ Bootstrap, RLS e Storage privado provados localmente; diagnóstico remoto
 
 ## Último commit
 
-`6c2476e` — feat(hml): ferramenta de homologação com dados sintéticos e prova de isolamento.
+`9ea5292` — fix(supabase): role idempotente para admin não-superuser e Storage homologado.
 
 ## Próxima ação automática
 
