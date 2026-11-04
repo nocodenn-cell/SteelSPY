@@ -51,7 +51,7 @@ a execução no projeto remoto continua **bloqueada** por credenciais (ver Bloqu
 
 ## Último commit de entrega
 
-`ad22f31` — feat(vc02): contratos de dataset e métricas para a Sprint 5.
+`33b7e44` — test(ci): marca testes do Supabase local e exclui no CI.
 (Atualizações de bookkeeping deste arquivo não contam.)
 
 ## Próxima ação automática
