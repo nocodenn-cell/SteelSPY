@@ -12,6 +12,7 @@ O que estes testes protegem:
 
 from __future__ import annotations
 
+import hashlib
 import io
 import json
 import uuid
@@ -683,3 +684,164 @@ def test_falha_de_banco_responde_503_sem_vazar_detalhe(cliente: Any) -> None:
     texto = r.text.lower()
     for proibido in ("select", "postgres", "db.interno", "connection refused", "senha"):
         assert proibido not in texto, f"resposta vazou detalhe: {proibido}"
+
+
+# ---------------------------------------------------------------------------
+# Fluxo completo: obra -> pedido -> NF-e -> conferência -> evidência -> dossiê
+# ---------------------------------------------------------------------------
+
+
+def test_fluxo_completo_de_recebimento_ponta_a_ponta(
+    cliente: Any, equipe: dict[str, Any], storage: Any, sql_owner: Any
+) -> None:
+    """
+    O caminho que o operador percorre no canteiro, do pedido ao dossiê.
+
+    O que este teste protege, além do "funciona":
+
+    - engenharia compra e vincula a nota; o fiscal conta no portão — papéis diferentes;
+    - a contagem fecha a linha e o servidor calcula `completo`/`atendido`;
+    - reenviar a mesma carga com o mesmo `id_cliente` devolve o mesmo recebimento;
+    - a foto fica presa ao tenant, à obra e àquele recebimento, e o reenvio não duplica;
+    - o download confere o hash e não expõe caminho de storage;
+    - a construtora vizinha não alcança pedido, entrega nem foto.
+    """
+    csrf_eng = _login(cliente, equipe["emails"]["eng"])
+    cnpj = f"{uuid.uuid4().int % 10**14:014d}"
+    fornecedor = _criar_fornecedor(cliente, equipe["obra_a"], csrf_eng, cnpj=cnpj)
+
+    criado = _criar_pedido(cliente, equipe["obra_a"], csrf_eng, fornecedor, numero="PC-E2E")
+    assert criado.status_code == 201, criado.text
+    pedido = criado.json()
+    item_id = pedido["itens"][0]["id"]
+
+    nfe = _nfe_com_itens(
+        sql_owner, equipe,
+        [{"bitola_mm": 10.0, "quantidade": 1000.0, "unidade": "M", "marca": "GERDAU"}],
+        cnpj,
+    )
+    vinculo = _post(
+        cliente, f"/pedidos/{pedido['id']}/vincular-nfe", {"nfe_log_id": str(nfe)}, csrf_eng
+    )
+    assert vinculo.status_code == 200, vinculo.text
+
+    # O fiscal é quem conta a carga no portão.
+    cliente.cookies.clear()
+    csrf_fiscal = _login(cliente, equipe["emails"]["fiscal"])
+    id_cliente = uuid.uuid4()
+    corpo_recebimento = {
+        "id_cliente": str(id_cliente),
+        "pedido_id": pedido["id"],
+        "observacoes": "carga conferida na descarga",
+        "itens": [
+            {"pedido_item_id": item_id, "quantidade": 1000.0, "unidade": "M"}
+        ],
+    }
+    entrega = _post(
+        cliente, f"/obras/{equipe['obra_a']}/recebimentos", corpo_recebimento, csrf_fiscal
+    )
+    assert entrega.status_code == 200, entrega.text
+    rec = entrega.json()
+    assert rec["criado"] is True
+    assert rec["status"] == "completo"
+    assert rec["pedido_status"]["status"] == "atendido"
+
+    # Retry depois de uma resposta perdida: mesma chave, mesmo registro.
+    retry_entrega = _post(
+        cliente, f"/obras/{equipe['obra_a']}/recebimentos", corpo_recebimento, csrf_fiscal
+    )
+    assert retry_entrega.status_code == 200, retry_entrega.text
+    assert retry_entrega.json()["id"] == rec["id"]
+    assert retry_entrega.json()["criado"] is False
+
+    buf = io.BytesIO()
+    Image.new("RGB", (48, 32), (7, 77, 7)).save(buf, format="PNG")
+    foto = buf.getvalue()
+    chave_upload = f"cam-{uuid.uuid4().hex}"
+    upload = cliente.post(
+        f"/obras/{equipe['obra_a']}/evidencias",
+        files={"arquivo": ("carga.png", foto, "image/png")},
+        data={
+            "tipo": "material",
+            "origem": "camera",
+            "recebimento_id": rec["id"],
+            "idempotency_key": chave_upload,
+        },
+        headers={"X-CSRF-Token": csrf_fiscal},
+    )
+    assert upload.status_code == 201, upload.text
+    evidencia = upload.json()
+    assert evidencia["criada"] is True
+    assert evidencia["recebimento_id"] == rec["id"]
+    assert "storage_key" not in evidencia, "caminho de storage não é dado de API"
+
+    reenvio = cliente.post(
+        f"/obras/{equipe['obra_a']}/evidencias",
+        files={"arquivo": ("carga.png", foto, "image/png")},
+        data={
+            "tipo": "material",
+            "origem": "camera",
+            "recebimento_id": rec["id"],
+            "idempotency_key": chave_upload,
+        },
+        headers={"X-CSRF-Token": csrf_fiscal},
+    )
+    assert reenvio.status_code == 200, reenvio.text
+    assert reenvio.json()["id"] == evidencia["id"]
+    assert reenvio.json()["criada"] is False
+
+    # A prova está amarrada ao tenant, à obra e ao recebimento — não só "na obra".
+    with sql_owner.connect() as conn:
+        linha = conn.execute(
+            text("""
+                SELECT tenant_id, obra_id, recebimento_id, storage_key, criado_por
+                FROM evidencias WHERE id = :id
+            """),
+            {"id": evidencia["id"]},
+        ).mappings().one()
+    assert str(linha["tenant_id"]) == str(equipe["tenant_a"])
+    assert str(linha["obra_id"]) == str(equipe["obra_a"])
+    assert str(linha["recebimento_id"]) == rec["id"]
+    assert str(linha["criado_por"]) == str(equipe["ids"]["fiscal"])
+    assert linha["storage_key"].startswith(f"{equipe['tenant_a']}/{equipe['obra_a']}/")
+
+    download = cliente.get(f"/evidencias/{evidencia['id']}/conteudo")
+    assert download.status_code == 200, download.text
+    assert download.headers["x-conteudo-sha256"] == evidencia["sha256"]
+    assert hashlib.sha256(download.content).hexdigest() == evidencia["sha256"]
+    assert "no-store" in download.headers["cache-control"]
+
+    conciliacao = _post(
+        cliente, f"/pedidos/{pedido['id']}/conciliar", {"nfe_log_id": str(nfe)}, csrf_fiscal
+    )
+    assert conciliacao.status_code == 201, conciliacao.text
+    assert conciliacao.json()["severidade_tecnica"] == "VERDE"
+
+    # Quem compra responde pelo dossiê; o fiscal não exporta.
+    assert cliente.get(f"/pedidos/{pedido['id']}/dossie").status_code == 403
+
+    cliente.cookies.clear()
+    csrf_eng = _login(cliente, equipe["emails"]["eng"])
+    dossie = cliente.get(f"/pedidos/{pedido['id']}/dossie")
+    assert dossie.status_code == 200, dossie.text
+    corpo = dossie.json()
+    assert corpo["total_evidencias"] == 1
+    assert corpo["total_conciliacoes"] == 1
+    assert [r["id"] for r in corpo["recebimentos"]] == [rec["id"]]
+    assert corpo["evidencias"][0]["id"] == evidencia["id"]
+    assert corpo["evidencias"][0]["recebimento_id"] == rec["id"]
+    assert corpo["cobertura"][0]["status_recebimento"] == "completo"
+    assert any(e["status_para"] == "completo" for e in corpo["transicoes"])
+
+    pdf = cliente.get(f"/pedidos/{pedido['id']}/dossie.pdf")
+    assert pdf.status_code == 200, pdf.text
+    assert pdf.content[:4] == b"%PDF"
+
+    # A construtora vizinha não alcança nada por id.
+    cliente.cookies.clear()
+    _login(cliente, equipe["emails"]["admin_b"])
+    assert cliente.get(f"/pedidos/{pedido['id']}").status_code == 404
+    assert cliente.get(f"/recebimentos/{rec['id']}").status_code == 404
+    assert cliente.get(f"/evidencias/{evidencia['id']}").status_code == 404
+    assert cliente.get(f"/evidencias/{evidencia['id']}/conteudo").status_code == 404
+    assert cliente.get(f"/obras/{equipe['obra_a']}/recebimentos").status_code == 404
