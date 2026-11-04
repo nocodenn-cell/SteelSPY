@@ -77,7 +77,7 @@ def test_sem_schema_migrations_todas_as_locais_ficam_pendentes():
 
 
 def test_senha_e_mascarada_em_mensagem_de_erro():
-    texto = "could not connect to postgresql://postgres.akvbtceshpsvsuacueaq:segredo123@aws-0-sa-east-1.pooler.supabase.com:5432/postgres"
+    texto = "could not connect to postgresql://postgres.akvbtceshpsvsuacueaq:segredo123@aws-0-sa-east-1.pooler.supabase.com:5432/postgres"  # credencial-de-exemplo
     mascarado = diag.mascarar(texto)
     assert "segredo123" not in mascarado
     assert "***@" in mascarado

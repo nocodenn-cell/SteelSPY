@@ -4,16 +4,17 @@
 
 ## Fase atual
 
-**FASE B — Supabase oficial homologado (`akvbtceshpsvsuacueaq`) + Sprint 5 operacional.**
-O destravamento da senha administrativa foi confirmado em 2026-11-04. As 30
-migrations foram aplicadas no projeto oficial (0 → 30/30), a role `stellspy_app`
-foi criada sem `BYPASSRLS`, o bucket `evidencias` nasceu privado, a HML com duas
-construtoras sintéticas passou 12/12 e o E2E HTTP gravou e leu uma evidência real
-no Storage oficial com SHA-256 conferido. O remoto está homologado para os fluxos
-cobertos; deploy/push seguem fora de escopo. A Sprint 5 operacional corrigiu as
-integrações PWA × API × banco e provou o fluxo completo com 517 testes de
-backend e 16 testes de PWA; a validação em celular real com câmera segue
-explicitamente pendente.
+**FASE C — Sprint 6: preparação do piloto operacional.**
+O remoto continua homologado com as 30 migrations da Sprint 5; a Sprint 6
+acrescenta a migration 31 (role `stellspy_dashboard`), ainda **pendente no
+projeto oficial** e já exercitada na suíte local. O dashboard deixou de aceitar
+credencial de back-office: usa a role de leitura presa a um tenant. O PWA ganhou
+rascunho persistido (4 h) e estado por operação (`pendente`/`confirmada`/
+`falhou`), sem prometer fila offline. CORS passou a validar origens exatas no
+boot e há auditoria de segredos versionados. A suíte fechou em **570 testes de
+backend** e **35 de PWA**; a validação em celular real com câmera e o ensaio de
+backup seguem explicitamente pendentes. Nenhum deploy, push ou alteração remota
+foi executado.
 
 ## Concluído
 
@@ -64,16 +65,36 @@ explicitamente pendente.
 | Sprint 5 (op) | testes do contrato do PWA | Vitest **16 passed** (CSRF, erro de rede, `conferirNfe`, upload idempotente, chaves por arquivo) |
 | Sprint 5 (op) | suíte backend após as correções | **517 passed, 2 deselected** (`supabase_local`), schema recriado + 30 migrations |
 | Sprint 5 (op) | roteiro manual em celular real com câmera | `docs/sprint5/ROTEIRO_TESTE_MANUAL_MOBILE.md`; **execução física pendente** |
+| Sprint 6 (1) | dashboard deixa de usar credencial de back-office | migration `20261104170000_dashboard_role.sql`: role `stellspy_dashboard` (`NOBYPASSRLS`, `NOINHERIT`, SELECT em 5 tabelas, `NOLOGIN` sem senha); `DASHBOARD_TENANT_ID` explícito |
+| Sprint 6 (1) | isolamento por construtora provado em banco real | `test_dashboard_rls.py`: 8 testes (atributos, grants, A/B, sem contexto = 0, escrita negada, credencial admin recusada) |
+| Sprint 6 (2) | operação do PWA com estado honesto | `pwa/js/operacoes.js` + faixa na tela (`pendente`/`confirmada`/`falhou`); 10 testes Vitest |
+| Sprint 6 (2) | rascunho sobrevive a reload e a fechar o navegador | `pwa/js/rascunho.js`: localStorage por obra, TTL 4 h, tolerância de relógio; 9 testes Vitest |
+| Sprint 6 (2) | idempotência de recebimento e foto já coberta | `uq_recebimentos_id_cliente`, `uq_evidencias_idempotencia`, `(recebimento_id, sha256)`; retry testado no E2E |
+| Sprint 6 (3) | preparação de Android por ADB | `backend/scripts/preparar_android.py` + 9 testes; execução local: **ADB ausente (exit 2)** — nada aprovado |
+| Sprint 6 (4) | dez passos do piloto em teste único | `test_piloto_percorre_os_dez_passos_ate_a_consulta_autorizada`: auth → obra → pedido → NF-e → recebimento parcial → foto/hash → divergência → decisão → PDF → auditoria sem escrita |
+| Sprint 6 (5) | CORS com origens exatas e boot fail-fast | `app/cors.py` + 16 testes; `*`, `null`, caminho, query e credencial embutida são recusados |
+| Sprint 6 (5) | auditoria de configuração e segredos | `scripts/auditar_publicacao.py`: `.env` local → **0 bloqueios, 5 avisos**; varredura do Git sem segredo real; 17 testes |
+| Sprint 6 (5) | runbook, backup e GO/NO-GO documentados | `docs/sprint6/CHECKLIST_PUBLICACAO.md`, `DEPLOY_HOMOLOGACAO.md`, `PROCEDIMENTO_BACKUP_RESTAURACAO.md`, `RELATORIO_RISCOS.md` |
+| Sprint 6 | suítes finais | backend **570 passed, 2 deselected** (180 s, 31 migrations); PWA **35 passed** (4 arquivos) |
 
 ## Pendente
 
-- Executar o roteiro manual em celular real
+- Instalar `platform-tools`/ADB e executar o roteiro manual em celular real
   (`docs/sprint5/ROTEIRO_TESTE_MANUAL_MOBILE.md`): login, recebimento parcial,
-  retry sem duplicar, câmera, upload com queda de rede, papéis e isolamento.
-  Android via `adb reverse` tem caminho de custo zero; iPhone exige HTTPS.
-- Configurar `DASHBOARD_DATABASE_URL` (credencial de back-office) onde o
-  dashboard for publicado; a role da aplicação continua sem `BYPASSRLS`.
-- Definir `CORS_ALLOW_ORIGINS` com as origens exatas antes de qualquer deploy.
+  retry sem duplicar, câmera, upload com queda de rede, recarga/fechamento do
+  navegador, papéis e isolamento. `preparar_android.py` falhou aqui com exit 2
+  (ADB ausente); Android via `adb reverse` tem caminho de custo zero; iPhone
+  exige HTTPS.
+- Aplicar a migration 31 no projeto oficial com `STELLSPY_DASHBOARD_PASSWORD` e
+  configurar `DASHBOARD_DATABASE_URL` + `DASHBOARD_TENANT_ID` onde o dashboard
+  for publicado. A role da aplicação continua sem `BYPASSRLS`.
+- Definir `CORS_ALLOW_ORIGINS` com as origens exatas antes de qualquer deploy
+  (hoje vazio; a auditoria marca AVISO).
+- Ensaiar backup e restauração em banco descartável
+  (`docs/sprint6/PROCEDIMENTO_BACKUP_RESTAURACAO.md`) antes do GO.
+- Revisar os 5 avisos da auditoria de publicação (`NFE_IO_MOCK=1`, CORS vazio,
+  dashboard não configurado, `SUPABASE_DB_ADMIN_URL` no `.env`, `service_role`
+  presente) e transformar em decisão registrada.
 - Decidir o destino dos dados sintéticos HML no projeto oficial: permanecem duas
   construtoras `hml-*`, 3 usuários e uma evidência. A limpeza automática pode ser
   bloqueada pela FK de evidências; qualquer remoção exige autorização explícita.
@@ -89,28 +110,33 @@ explicitamente pendente.
 | Bloqueio | O que falta |
 |----------|-------------|
 | Deploy | fora de escopo por instrução; nada foi publicado nem enviado ao Git remoto |
-| PWA em aparelho real | câmera e fluxo de campo ainda não exercitados no navegador do celular |
+| PWA em aparelho real | câmera e fluxo de campo não exercitados; ADB ausente nesta máquina |
+| Backup | procedimento escrito, nenhum dump/restore executado antes do GO |
+| Publicação | `CORS_ALLOW_ORIGINS`, `DASHBOARD_DATABASE_URL`/`DASHBOARD_TENANT_ID` e `NFE_IO_MOCK=0` ainda não definidos |
 | VC-01 em campo | fotografias do cenário real de recebimento e GPU (RTX 4070 não presente nesta máquina) |
 | Sprint 5 dados | ≥ 60 obras / ≥ 600 fotos rotuladas; sem isso, não há métrica honesta |
 
 ## Último commit de entrega
 
-Sprint 5 (operação de campo): `45a190c` PWA sem duplicar, `8e6f803` dashboard
-com credencial de back-office, `392cf19` E2E do recebimento completo e o commit
-de documentação que registra os três. Detalhe em
-`docs/sprint5/RELATORIO_SPRINT5_OPERACIONAL.md` §7.
+Sprint 6 (piloto operacional): os commits desta entrega estão organizados em
+`docs/sprint6/RELATORIO_SPRINT6.md` §8 (dashboard de menor privilégio, PWA
+resiliente, preparação Android, teste dos dez passos, CORS/auditoria/documentos).
+Nenhum foi enviado ao remoto. Detalhe em `docs/sprint6/RELATORIO_SPRINT6.md`.
 (Atualizações de bookkeeping deste arquivo não contam.)
 
 ## Próxima ação automática
 
-1. Executar o roteiro manual em celular real e anexar as capturas — câmera e
-   retry com queda de rede são os pontos que nenhum teste automatizado cobre.
-   Android: `adb reverse` + `http://localhost:8080`; iPhone: pendente de HTTPS.
-2. Configurar `DASHBOARD_DATABASE_URL` antes de publicar o dashboard.
-3. Definir `CORS_ALLOW_ORIGINS` com as origens exatas antes de qualquer deploy.
-4. Decidir com o proprietário o destino dos dados HML sintéticos e a rotação da
+1. Instalar ADB e executar o roteiro manual em celular real, anexando capturas —
+   câmera e retry com queda de rede são os pontos que nenhum teste automatizado
+   cobre. Android: `adb reverse` + `http://localhost:8080`; iPhone: HTTPS.
+2. Aplicar a migration 31 no projeto oficial com `STELLSPY_DASHBOARD_PASSWORD`
+   e configurar `DASHBOARD_DATABASE_URL` + `DASHBOARD_TENANT_ID`.
+3. Ensaiar backup/restauração em banco descartável antes do GO.
+4. Definir `CORS_ALLOW_ORIGINS` com as origens exatas e decidir o modo NF-e
+   (`NFE_IO_MOCK=0` com token ou fluxo manual aceito).
+5. Decidir com o proprietário o destino dos dados HML sintéticos e a rotação da
    senha administrativa após a janela de homologação.
-5. Sprint 5: coletar e anonimizar fotografias reais; nenhum modelo entra no
+6. Sprint 5: coletar e anonimizar fotografias reais; nenhum modelo entra no
    produto sem os portões de `exp_vc02`.
 
 Nenhuma operação destrutiva, push ou deploy é autorizada sem pedido explícito.

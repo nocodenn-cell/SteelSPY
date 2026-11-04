@@ -21,10 +21,10 @@ config = _modulo()
 
 def test_arroba_e_dois_pontos_sao_codificados():
     url = config.montar_url(
-        "postgresql://postgres.ref:antiga@aws-0-us-east-2.pooler.supabase.com:5432/postgres",
+        "postgresql://postgres.ref:antiga@aws-0-us-east-2.pooler.supabase.com:5432/postgres",  # credencial-de-exemplo
         "a@b:c",
     )
-    assert url == "postgresql://postgres.ref:a%40b%3Ac@aws-0-us-east-2.pooler.supabase.com:5432/postgres"
+    assert url == "postgresql://postgres.ref:a%40b%3Ac@aws-0-us-east-2.pooler.supabase.com:5432/postgres"  # credencial-de-exemplo
 
 
 def test_preserva_scheme_e_host():
