@@ -38,6 +38,8 @@ import {
 import { csrf, pode } from "./sessao.js";
 import { irPara } from "./roteador.js";
 import { obraDaTela, tentar } from "./telas_entrada.js";
+import { criarOperacoes, rotuloStatus } from "./operacoes.js";
+import { criarRascunho } from "./rascunho.js";
 
 const TIPOS_EVIDENCIA = [
   ["material", "O material (ferro, saco, bloco)"],
@@ -50,34 +52,67 @@ const TIPOS_EVIDENCIA = [
 const CAMPO = "w-full p-4 mb-3 border-4 border-black rounded-lg text-base font-bold";
 
 // Rascunho da entrada em aberto: o id do dispositivo é o que o servidor usa
-// para não duplicar. Perdê-lo num reload transformaria "tentar de novo" em uma
-// segunda carga — por isso ele sobrevive na sessão do navegador até a resposta.
-const CHAVE_RASCUNHO = "stellspy.recebimento_em_aberto";
-const _UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+// para não duplicar. Perdê-lo num reload (ou ao fechar o navegador) transformaria
+// "tentar de novo" em uma segunda carga.
+const rascunho = criarRascunho();
 
-function _lerRascunho(obraId) {
-  try {
-    const bruto = sessionStorage.getItem(`${CHAVE_RASCUNHO}:${obraId}`);
-    return bruto && _UUID.test(bruto) ? bruto : null;
-  } catch {
-    return null; // aba privada: sem rascunho, a próxima tentativa cria um id novo.
-  }
-}
+// Estado de cada envio deste aparelho: pendente, confirmada ou falhou.
+const operacoes = criarOperacoes();
 
-function _guardarRascunho(obraId, id) {
-  try {
-    sessionStorage.setItem(`${CHAVE_RASCUNHO}:${obraId}`, id);
-  } catch {
-    /* sem storage: o id vive só enquanto a tela estiver aberta. */
-  }
-}
+const CLASSE_OPERACAO = {
+  pendente: "bg-amber-100 border-amber-700 text-amber-950",
+  confirmada: "bg-green-100 border-green-800 text-green-950",
+  falhou: "bg-red-100 border-red-800 text-red-950",
+};
 
-function _limparRascunho(obraId) {
-  try {
-    sessionStorage.removeItem(`${CHAVE_RASCUNHO}:${obraId}`);
-  } catch {
-    /* nada a limpar. */
+/**
+ * Faixa com os últimos envios deste aparelho.
+ *
+ * Ela não é decoração: depois de uma queda de rede, é o único lugar que diz se a
+ * operação foi confirmada pelo servidor ou ficou pendente. Por isso mostra
+ * horário de início e de atualização — "pendente desde 14:31" é uma informação
+ * diferente de "pendente há dois segundos".
+ */
+function _faixaOperacoes(obraId) {
+  const container = el("div", { class: "mb-4" });
+
+  function pintar() {
+    container.textContent = "";
+    const lista = operacoes.listar(obraId).slice(0, 5);
+    if (!lista.length) return;
+    const pendentes = operacoes.pendentes(obraId).length;
+    container.append(
+      el(
+        "div",
+        { class: "p-3 bg-white border-4 border-black rounded-xl", role: "status" },
+        el("p", { class: "text-xs font-black uppercase mb-2" }, "Envios deste aparelho"),
+        ...lista.map((op) => el(
+          "div",
+          { class: `p-2 mb-2 border-4 rounded-lg text-xs font-bold ${CLASSE_OPERACAO[op.status] || ""}` },
+          el("p", { class: "font-black uppercase" }, `${op.texto} · ${rotuloStatus(op.status)}`),
+          el(
+            "p",
+            {},
+            `iniciado ${formatoDataHora(op.criado_em)}`
+              + (op.atualizado_em && op.atualizado_em !== op.criado_em
+                ? ` · atualizado ${formatoDataHora(op.atualizado_em)}`
+                : ""),
+          ),
+          op.detalhe ? el("p", { class: "mt-1 break-words" }, op.detalhe) : null,
+        )),
+        pendentes
+          ? el(
+              "p",
+              { class: "text-xs font-bold" },
+              "Pendente quer dizer que o servidor ainda não confirmou. Reenviar não duplica: a chave da operação é a mesma.",
+            )
+          : null,
+      ),
+    );
   }
+
+  pintar();
+  return { no: container, pintar };
 }
 
 /**
@@ -115,11 +150,14 @@ export function telaRecebimento(base) {
 
   function montarFormulario({ reaproveitarRascunho = false } = {}) {
     const obra = obraDaTela();
-    // A chave da operação sobrevive a um reload da tela: se a resposta se perdeu,
-    // a nova tentativa reencontra o mesmo registro em vez de criar uma segunda
-    // entrada para a mesma carga. "Registrar outra entrada" cria chave nova.
-    const idCliente = (reaproveitarRascunho && _lerRascunho(obra.id)) || uuid4();
-    _guardarRascunho(obra.id, idCliente);
+    // A chave da operação sobrevive a reload, a fechar o navegador e a perder a
+    // resposta: a nova tentativa reencontra o mesmo registro em vez de criar uma
+    // segunda entrada para a mesma carga. "Registrar outra entrada" cria chave
+    // nova e descarta o rascunho anterior.
+    const retomado = reaproveitarRascunho ? rascunho.ler(obra.id) : null;
+    const idCliente = retomado || uuid4();
+    rascunho.guardar(obra.id, idCliente);
+    const faixa = _faixaOperacoes(obra.id);
 
     const tipo = el("select", { class: CAMPO },
       ...TIPO_TIPOS.map(([valor, rotulo]) => el("option", { value: valor }, rotulo)));
@@ -209,6 +247,14 @@ export function telaRecebimento(base) {
         return;
       }
       protegerEnvio(botao, async () => {
+        // Registrado antes da rede: se a resposta se perder, a tela continua
+        // dizendo "pendente" — nunca "não enviado", porque não dá para saber.
+        operacoes.registrar(obra.id, {
+          id: idCliente,
+          tipo: "recebimento",
+          texto: `Entrada (${tipo.value})`,
+        });
+        faixa.pintar();
         try {
           const dados = await tentar(base, () =>
             abrirRecebimento(base, obra.id, {
@@ -221,7 +267,12 @@ export function telaRecebimento(base) {
           );
           // Resposta recebida = o servidor tem o registro. A chave pode ser
           // descartada; a próxima entrada (se houver) nasce com outra.
-          _limparRascunho(obra.id);
+          rascunho.limpar(obra.id);
+          operacoes.confirmar(
+            obra.id,
+            idCliente,
+            `Recebimento ${dados.id} · ${rotuloEstado(dados.status)}`,
+          );
           if (!dados.criado) {
             // Retry de uma entrega que já entrou: o servidor tem o estado real.
             const detalhe = await tentar(base, () => obterRecebimento(base, dados.id, csrf()));
@@ -232,6 +283,8 @@ export function telaRecebimento(base) {
           mostrarToast(`Estado: ${rotuloEstado(dados.status)}.`, "sucesso");
           montarResultado(dados);
         } catch (e) {
+          operacoes.falhar(obra.id, idCliente, e.message || "não confirmado");
+          faixa.pintar();
           avisos.append(blocoErro(e.message || "Não abriu o recebimento.", () => botao.click()));
         }
       });
@@ -239,8 +292,17 @@ export function telaRecebimento(base) {
 
     tela.textContent = "";
     tela.append(
+      faixa.no,
       cartao(
         titulo("Registrar recebimento", "Abre a carga que acabou de entrar no portão."),
+        retomado
+          ? el(
+              "p",
+              { class: "p-2 mb-3 bg-amber-100 border-4 border-amber-700 rounded-lg text-xs font-bold" },
+              `Retomando o registro iniciado às ${formatoDataHora(rascunho.inicio(obra.id)?.toISOString())}. `
+                + "Enviar de novo não cria outra entrada.",
+            )
+          : null,
         el("label", { class: "block text-sm font-bold mb-1" }, "O que é?"),
         tipo,
         el("label", { class: "block text-sm font-bold mb-1" }, "Qual pedido esta carga atende?"),
@@ -254,7 +316,8 @@ export function telaRecebimento(base) {
       el(
         "p",
         { class: "text-sm font-bold text-center text-gray-700 px-2" },
-        "Conte o que entrou, não o que a nota diz. A foto é a prova; a nota é só a cobrança.",
+        "Conte o que entrou, não o que a nota diz. A foto é a prova; a nota é só a cobrança. "
+          + "Nada é dado como concluído sem a resposta do servidor — não existe envio em segundo plano.",
       ),
     );
 
@@ -288,6 +351,7 @@ export function telaRecebimento(base) {
     // A resposta da gravação traz só {pedido_item_id, quantidade}; o nome da
     // linha vem da cobertura que a tela já tinha lido. O detalhe, por sua vez,
     // já vem do servidor com linha e unidade.
+    const faixa = _faixaOperacoes(obraDaTela().id);
     const linhas = coberturas[dados.pedido_id] || [];
     const itens = (dados.contagem || dados.itens || []).map((i) => {
       const l = linhas.find((x) => x.id === i.pedido_item_id) || {};
@@ -327,6 +391,7 @@ export function telaRecebimento(base) {
 
     tela.textContent = "";
     tela.append(
+      faixa.no,
       cartao(
         titulo("Entrega registrada", `Recebido em ${formatoDataHora(dados.recebido_em)}`),
         el("p", { class: "flex items-center gap-2 mb-2" }, badgeEstado(dados.status)),
@@ -358,6 +423,7 @@ export function telaFotos(base, recebimentoId) {
   // (auditoria); só os controles de envio dependem de `anexar_evidencia`.
   const podeEnviar = pode("anexar_evidencia");
   const chaveDeEnvio = criarChavesDeEnvio();
+  const faixa = _faixaOperacoes(obra.id);
   const lista = el("div", {}, carregando());
   const estadoEntrega = el("div", {});
 
@@ -405,8 +471,15 @@ export function telaFotos(base, recebimentoId) {
     let faltaram = 0;
     for (const [i, arquivo] of nomes.entries()) {
       btnCamera.textContent = `ENVIANDO ${i + 1} DE ${nomes.length}…`;
+      const chave = chaveDeEnvio(arquivo);
+      operacoes.registrar(obra.id, {
+        id: chave,
+        tipo: "foto",
+        texto: arquivo.name || "foto",
+      });
+      faixa.pintar();
       try {
-        await tentar(base, () =>
+        const evidencia = await tentar(base, () =>
           enviarEvidencia(
             base,
             obra.id,
@@ -416,15 +489,22 @@ export function telaFotos(base, recebimentoId) {
               origem,
               recebimentoId,
               capturadaEm: new Date().toISOString(),
-              chaveIdempotencia: chaveDeEnvio(arquivo),
+              chaveIdempotencia: chave,
             },
             csrf(),
           ),
         );
+        operacoes.confirmar(
+          obra.id,
+          chave,
+          evidencia && evidencia.id ? `evidência ${evidencia.id}` : null,
+        );
       } catch (e) {
         faltaram += 1;
+        operacoes.falhar(obra.id, chave, e.message || "não subiu");
         avisos.append(blocoErro(`${arquivo.name || "foto"}: ${e.message || "não subiu."}`));
       }
+      faixa.pintar();
     }
     btnCamera.disabled = false;
     btnGaleria.disabled = false;
@@ -482,6 +562,7 @@ export function telaFotos(base, recebimentoId) {
     "div",
     {},
     estadoEntrega,
+    faixa.no,
     podeEnviar
       ? cartao(
           titulo("Fotos da carga", "Escolha o que a foto mostra antes de enviar."),
@@ -495,7 +576,9 @@ export function telaFotos(base, recebimentoId) {
           el(
             "p",
             { class: "text-xs font-bold text-gray-700" },
-            "O servidor guarda o arquivo original e uma versão sem dados ocultos da câmera. Os dois ficam com você.",
+            "O servidor guarda o arquivo original e uma versão sem dados ocultos da câmera. Os dois ficam com você. "
+              + "A foto só aparece como confirmada depois da resposta do servidor; se a rede cair, "
+              + "tente de novo — a mesma foto mantém a chave e não vira duas evidências.",
           ),
         )
       : cartao(

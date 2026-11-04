@@ -59,6 +59,21 @@ de teste no repositório.
 
 ### Celular Android por USB (câmera funciona)
 
+Com o aparelho conectado e a depuração USB autorizada:
+
+```powershell
+cd backend
+..\.venv\Scripts\python.exe scripts\preparar_android.py
+```
+
+O script localiza o `adb` (PATH, `ANDROID_HOME` ou `ANDROID_SDK_ROOT`), exige um
+único aparelho pronto, aplica `adb reverse tcp:8080` e `tcp:8000` e confere se a
+API e o PWA respondem em `localhost`. Ele **não aprova nada**: só prepara o
+caminho. Se o ADB não estiver instalado, sai com código 2 e diz o que falta —
+instalar `platform-tools` é gratuito.
+
+Fallback manual:
+
 ```powershell
 adb devices                 # aparelho autorizado
 adb reverse tcp:8080 tcp:8080
@@ -104,13 +119,27 @@ tipo de rede (Wi-Fi/4G) e captura de tela. "Passou" sem captura não conta.
 1. Inicie uma nova entrada e preencha a contagem.
 2. Ative o modo avião **antes** de tocar em `REGISTRAR ENTRADA`.
 3. Toque no botão.
-4. **Esperado:** mensagem clara de "Sem conexão… a operação não foi confirmada".
-   Nada é marcado como concluído.
+4. **Esperado:** a operação aparece como **PENDENTE** e depois **FALHOU**, com
+   mensagem clara de "Sem conexão… a operação não foi confirmada". Nada é
+   marcado como concluído.
 5. Desligue o modo avião e toque novamente.
-6. **Esperado:** a entrada é criada **uma vez**. O histórico não mostra duplicata.
+6. **Esperado:** a operação passa a **CONFIRMADA**; a entrada é criada **uma
+   vez**. O histórico não mostra duplicata.
 
-> O app guarda o identificador daquela entrada na sessão do navegador. Recarregar
-> a tela não cria uma segunda carga; "REGISTRAR OUTRA ENTRADA" cria.
+> O app guarda o identificador daquela entrada (4 h) e o estado da operação.
+> Recarregar a tela não cria uma segunda carga; "REGISTRAR OUTRA ENTRADA" cria.
+
+### CT-03b — Recarga e fechamento do navegador
+
+1. Inicie uma nova entrada, preencha a contagem e **não** envie.
+2. Recarregue a página.
+3. **Esperado:** o formulário avisa que está retomando o registro iniciado e
+   mantém o mesmo identificador.
+4. Feche a aba, reabra o app e volte em **Receber**.
+5. **Esperado:** o registro em aberto ainda é retomado (dentro de 4 h). Depois de
+   enviado, o rascunho desaparece.
+6. Se a operação foi enviada antes de fechar, a lista mostra **CONFIRMADA**; se
+   ficou sem resposta, mostra **PENDENTE/FALHOU** — nunca "concluída" por engano.
 
 ### CT-04 — Câmera e evidência
 
@@ -127,9 +156,11 @@ tipo de rede (Wi-Fi/4G) e captura de tela. "Passou" sem captura não conta.
 
 1. Selecione outra foto e toque em enviar.
 2. Ative o modo avião durante o envio.
-3. **Esperado:** erro claro; a foto **não** entra como enviada.
+3. **Esperado:** erro claro; a foto **não** entra como enviada. O estado da
+   operação fica **FALHOU** para aquele arquivo.
 4. Desligue o modo avião e toque em enviar novamente.
-5. **Esperado:** existe **uma** foto nova, não duas.
+5. **Esperado:** existe **uma** foto nova, não duas; a operação fica
+   **CONFIRMADA**.
 
 ### CT-06 — Permissões por papel
 
