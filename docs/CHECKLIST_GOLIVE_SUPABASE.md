@@ -21,8 +21,10 @@ senha nem `service_role`.
 | `SUPABASE_URL` | Project Settings → API | Storage/laudo |
 | `SUPABASE_ANON_KEY` | Project Settings → API (publishable) | cliente, se usado |
 | `SUPABASE_SERVICE_ROLE_KEY` | Project Settings → API (secret) | **só servidor** (`EVIDENCIAS_STORAGE=supabase`) |
+| `DASHBOARD_DATABASE_URL` | credencial de back-office (ex.: owner), **não** a role da API | dashboard Streamlit (leitura cross-tenant) |
 
 - [ ] `DATABASE_URL` usa `stellspy_app.<ref>`, **nunca** `postgres.<ref>`.
+- [ ] `DASHBOARD_DATABASE_URL` é uma credencial distinta; o dashboard não reutiliza `DATABASE_URL`.
 - [ ] `SUPABASE_DB_ADMIN_URL` fica fora do processo da API.
 - [ ] Nenhuma chave `service_role` em variável `NEXT_PUBLIC_*`, PWA ou log.
 
@@ -270,3 +272,27 @@ e pode esbarrar na FK `evidencias.tenant_id` (`ON DELETE RESTRICT`).
 Pendências que não bloqueiam a homologação: `CORS_ALLOW_ORIGINS` vazio, PWA em
 navegador/aparelho real, rotação da senha administrativa após a janela e decisão
 sobre os dados HML.
+
+---
+
+## 12. Sprint 5 — operação de campo (2026-11-04)
+
+Correções de integração entre PWA, API e banco, sem alterar migrations nem dados
+remotos. Detalhes em `docs/sprint5/RELATORIO_SPRINT5_OPERACIONAL.md`.
+
+| Verificação | Resultado |
+|-------------|-----------|
+| Conferência por chave com sessão de usuário | passou a enviar CSRF e tratar 401 pelo cliente comum do PWA |
+| Rotas do PWA × ações do backend | `pedido` → `ver_recebimento`, `fotos` → `ver_evidencia`, `conferir` → `criar_recebimento` |
+| Recebimento idempotente | `id_cliente` sobrevive a reload via `sessionStorage`; retry devolve o mesmo registro |
+| Evidência idempotente | chave estável por arquivo na tela; mesmo retry não duplica |
+| Fluxo ponta a ponta | pedido → NF-e → recebimento → foto → conciliação → dossiê (JSON/PDF) coberto por teste de integração |
+| Isolamento no fluxo completo | construtora vizinha recebe **404** para pedido, entrega, foto e conteúdo |
+| Hash da evidência | `X-Conteudo-Sha256` e SHA-256 dos bytes conferem no download |
+| Dashboard | exige `DASHBOARD_DATABASE_URL`; com a role da API (RLS) para com mensagem explícita |
+| PWA — testes unitários | `npm test` — 16 passed |
+| Backend — suíte completa | ver `PROGRESS.md` (execução final desta entrega) |
+| Celular real / câmera | **pendente de execução física** — roteiro em `docs/sprint5/ROTEIRO_TESTE_MANUAL_MOBILE.md` |
+
+Nenhuma migration foi criada ou aplicada nesta etapa; o schema oficial segue
+30/30. Nenhum dado sintético remoto foi removido e nada foi enviado ao Git remoto.

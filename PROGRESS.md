@@ -4,13 +4,16 @@
 
 ## Fase atual
 
-**FASE B — Supabase oficial homologado (`akvbtceshpsvsuacueaq`).**
+**FASE B — Supabase oficial homologado (`akvbtceshpsvsuacueaq`) + Sprint 5 operacional.**
 O destravamento da senha administrativa foi confirmado em 2026-11-04. As 30
 migrations foram aplicadas no projeto oficial (0 → 30/30), a role `stellspy_app`
 foi criada sem `BYPASSRLS`, o bucket `evidencias` nasceu privado, a HML com duas
 construtoras sintéticas passou 12/12 e o E2E HTTP gravou e leu uma evidência real
 no Storage oficial com SHA-256 conferido. O remoto está homologado para os fluxos
-cobertos; deploy/push seguem fora de escopo.
+cobertos; deploy/push seguem fora de escopo. A Sprint 5 operacional corrigiu as
+integrações PWA × API × banco e provou o fluxo completo com 517 testes de
+backend e 16 testes de PWA; a validação em celular real com câmera segue
+explicitamente pendente.
 
 ## Concluído
 
@@ -55,11 +58,21 @@ cobertos; deploy/push seguem fora de escopo.
 | Remoto (B) | Storage oficial privado | bucket `evidencias` (`public=false`, 12 MiB); ciclo real upload/leitura/duplicado/remoção → **1 passed**; rota pública não entrega o objeto |
 | Remoto (B) | E2E HTTP no banco oficial | login sintético → upload **201** → download normalizado e original **200**; bytes originais idênticos e SHA-256 normalizado/original conferem; cross-tenant **404** |
 | Remoto (B) | suíte completa após as correções | **514 passed, 2 skipped** |
+| Sprint 5 (op) | correções de integração PWA × API × banco | CSRF na conferência por chave, rotas alinhadas ao RBAC, rascunho de `id_cliente`, chave de idempotência por foto, cache v5, erros de rede claros |
+| Sprint 5 (op) | fluxo completo obra → pedido → NF-e → recebimento → foto → conciliação → dossiê | `test_fluxo_completo_de_recebimento_ponta_a_ponta`: retry sem duplicar, binding tenant/obra/recebimento, hash no download, vizinho 404 |
+| Sprint 5 (op) | dashboard deixa de reutilizar a credencial da API | `DASHBOARD_DATABASE_URL` + `diagnostico_conexao`; role `stellspy_app` sem contexto → 0 obras e mensagem explícita |
+| Sprint 5 (op) | testes do contrato do PWA | Vitest **16 passed** (CSRF, erro de rede, `conferirNfe`, upload idempotente, chaves por arquivo) |
+| Sprint 5 (op) | suíte backend após as correções | **517 passed, 2 deselected** (`supabase_local`), schema recriado + 30 migrations |
+| Sprint 5 (op) | roteiro manual em celular real com câmera | `docs/sprint5/ROTEIRO_TESTE_MANUAL_MOBILE.md`; **execução física pendente** |
 
 ## Pendente
 
-- Homologação funcional do PWA no navegador contra o banco oficial (o fluxo HTTP
-  já passa; falta a interface em aparelho/navegador real).
+- Executar o roteiro manual em celular real
+  (`docs/sprint5/ROTEIRO_TESTE_MANUAL_MOBILE.md`): login, recebimento parcial,
+  retry sem duplicar, câmera, upload com queda de rede, papéis e isolamento.
+  Android via `adb reverse` tem caminho de custo zero; iPhone exige HTTPS.
+- Configurar `DASHBOARD_DATABASE_URL` (credencial de back-office) onde o
+  dashboard for publicado; a role da aplicação continua sem `BYPASSRLS`.
 - Definir `CORS_ALLOW_ORIGINS` com as origens exatas antes de qualquer deploy.
 - Decidir o destino dos dados sintéticos HML no projeto oficial: permanecem duas
   construtoras `hml-*`, 3 usuários e uma evidência. A limpeza automática pode ser
@@ -82,19 +95,22 @@ cobertos; deploy/push seguem fora de escopo.
 
 ## Último commit de entrega
 
-`ef0fe4c` — fix(hml): compara migrations pelo nome completo e filtra RLS por tenant.
+Sprint 5 (operação de campo): `45a190c` PWA sem duplicar, `8e6f803` dashboard
+com credencial de back-office, `392cf19` E2E do recebimento completo e o commit
+de documentação que registra os três. Detalhe em
+`docs/sprint5/RELATORIO_SPRINT5_OPERACIONAL.md` §7.
 (Atualizações de bookkeeping deste arquivo não contam.)
 
 ## Próxima ação automática
 
-1. Homologar o PWA no navegador contra o banco oficial (login, obra, upload pela
-   câmera, download e bloqueio cross-tenant). O E2E HTTP já passou; falta a
-   interface real. Em HTTP local, subir o backend com `PWA_COOKIE_SECURE=0`
-   apenas no processo de teste.
-2. Definir `CORS_ALLOW_ORIGINS` com as origens exatas antes de qualquer deploy.
-3. Decidir com o proprietário o destino dos dados HML sintéticos e a rotação da
+1. Executar o roteiro manual em celular real e anexar as capturas — câmera e
+   retry com queda de rede são os pontos que nenhum teste automatizado cobre.
+   Android: `adb reverse` + `http://localhost:8080`; iPhone: pendente de HTTPS.
+2. Configurar `DASHBOARD_DATABASE_URL` antes de publicar o dashboard.
+3. Definir `CORS_ALLOW_ORIGINS` com as origens exatas antes de qualquer deploy.
+4. Decidir com o proprietário o destino dos dados HML sintéticos e a rotação da
    senha administrativa após a janela de homologação.
-4. Sprint 5: coletar e anonimizar fotografias reais; nenhum modelo entra no
+5. Sprint 5: coletar e anonimizar fotografias reais; nenhum modelo entra no
    produto sem os portões de `exp_vc02`.
 
 Nenhuma operação destrutiva, push ou deploy é autorizada sem pedido explícito.
