@@ -544,6 +544,7 @@ def test_upload_com_storage_supabase_isola_por_tenant_e_nao_expoe_credencial(
         arm.definir_backend(None)
 
 
+@pytest.mark.supabase_local
 @pytest.mark.skipif(
     not (os.getenv("SUPABASE_TEST_URL") and os.getenv("SUPABASE_TEST_SECRET")),
     reason="defina SUPABASE_TEST_URL e SUPABASE_TEST_SECRET (Supabase local ativo)",

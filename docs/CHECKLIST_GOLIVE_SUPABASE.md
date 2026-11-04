@@ -159,7 +159,7 @@ com as 30 migrações e a role operacional — falta repetir no projeto remoto:
 | Role `stellspy_app` | `NOBYPASSRLS`, `NOSUPERUSER` |
 | Bucket `evidencias` | privado (`public=false`), 12 MiB, JPEG/PNG |
 | Suíte de integração | 177 passed (RLS, auth, pedidos, NF-e, recebimento, evidências, dossiê) |
-| Suíte completa do backend | 497 passed (inclui 21 da preparação da Sprint 5) |
+| Suíte completa do backend | 497 passed (495 no CI + 2 marcados `supabase_local`; inclui 21 da preparação da Sprint 5) |
 | Storage real (upload/leitura/duplicado/remoção) | 1 passed contra a API local |
 | E2E API → Storage privado → download com hash | 1 passed (original byte a byte, isolamento entre construtoras) |
 | HML `--acao tudo` | 12/12 PASS com `stellspy_app` |

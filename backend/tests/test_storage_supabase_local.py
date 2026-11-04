@@ -1,8 +1,9 @@
 """Storage real do Supabase local — sem mock.
 
 Só roda quando `SUPABASE_TEST_URL` e `SUPABASE_TEST_SECRET` estão definidos,
-porque exige um Supabase local ativo (`supabase start`). Em CI sem Supabase o
-teste é pulado, não falsificado.
+porque exige um Supabase local ativo (`supabase start`). O CI exclui este
+marcador explicitamente (`-m "not supabase_local"`); localmente, rode
+`pytest -m supabase_local`. Sem o stack, o teste é pulado — nunca falsificado.
 
 Prova o que o mock não prova: o bucket existe, aceita o upload autenticado,
 recusa sobrescrita, devolve os mesmos bytes e não expõe o objeto publicamente.
@@ -22,10 +23,13 @@ URL = (os.getenv("SUPABASE_TEST_URL") or "").strip()
 CHAVE = (os.getenv("SUPABASE_TEST_SECRET") or "").strip()
 BUCKET = (os.getenv("SUPABASE_TEST_BUCKET") or "evidencias").strip()
 
-pytestmark = pytest.mark.skipif(
-    not (URL and CHAVE),
-    reason="defina SUPABASE_TEST_URL e SUPABASE_TEST_SECRET (Supabase local ativo)",
-)
+pytestmark = [
+    pytest.mark.supabase_local,
+    pytest.mark.skipif(
+        not (URL and CHAVE),
+        reason="defina SUPABASE_TEST_URL e SUPABASE_TEST_SECRET (Supabase local ativo)",
+    ),
+]
 
 
 def test_ciclo_real_no_bucket_privado():

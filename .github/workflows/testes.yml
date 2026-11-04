@@ -75,7 +75,9 @@ jobs:
         working-directory: backend
         run: |
           set -o pipefail
-          if ! python -m pytest -q -rs 2>&1 | tee /tmp/pytest.log; then
+          # `supabase_local` exige o stack Supabase local (API + Storage), que o CI
+          # não sobe. É excluído de forma explícita — não é skip silencioso.
+          if ! python -m pytest -q -rs -m "not supabase_local" 2>&1 | tee /tmp/pytest.log; then
             echo "::error::a suíte falhou"
             exit 1
           fi
