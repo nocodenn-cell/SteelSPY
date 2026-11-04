@@ -97,6 +97,27 @@ def test_remover_e_idempotente_mas_falha_real_sobe():
         quebrado.remover("a/b.jpg")
 
 
+def test_nao_encontrado_como_400_do_supabase_e_tratado_como_ausencia():
+    """O Storage responde 400 `not_found`, não 404, para objeto inexistente."""
+    ausente = httpx.Response(
+        400, json={"statusCode": "404", "error": "not_found", "message": "Object not found"}
+    )
+
+    backend = _backend(lambda request: ausente)
+    assert backend.existe("a/b.jpg") is False
+    backend.remover("a/b.jpg")  # sem exceção
+
+    with pytest.raises(arm.ErroArmazenamento) as exc:
+        backend.ler("a/b.jpg")
+    assert "não encontrado" in str(exc.value)
+
+    # Num HEAD não há corpo para inspecionar: 400 é tratado como ausência,
+    # enquanto falha de credencial (401/403) continua sendo erro.
+    invalido = _backend(lambda request: httpx.Response(401, json={"error": "invalid_key"}))
+    with pytest.raises(arm.ErroArmazenamento):
+        invalido.existe("a/b.jpg")
+
+
 @pytest.mark.parametrize(
     "chave",
     ["", "/absoluta.jpg", "../fora.jpg", "a/../../b.jpg", "a//b.jpg", "C:/x.jpg", "a\\..\\b.jpg"],

@@ -121,6 +121,16 @@ def _tipo_conteudo(chave: str) -> str:
     return _TIPOS_POR_EXTENSAO.get(Path(chave).suffix.lower(), "application/octet-stream")
 
 
+def _ausente(resposta: httpx.Response) -> bool:
+    """Supabase devolve 400 com `not_found` (não só 404) para objeto inexistente."""
+    if resposta.status_code == 404:
+        return True
+    if resposta.status_code != 400:
+        return False
+    corpo = resposta.content[:300].lower()
+    return b"not_found" in corpo or b"not found" in corpo
+
+
 class ArmazenamentoSupabase:
     """Storage do Supabase, bucket privado, acesso exclusivo do servidor.
 
@@ -199,11 +209,11 @@ class ArmazenamentoSupabase:
             resposta = self._cliente.get(self._url(chave), headers=self._headers())
         except httpx.RequestError as exc:
             raise ErroArmazenamento(f"falha ao ler objeto: {exc}") from exc
-        if resposta.status_code == 404:
+        if resposta.status_code == 200:
+            return resposta.content
+        if _ausente(resposta):
             raise ErroArmazenamento("objeto não encontrado no armazenamento")
-        if resposta.status_code != 200:
-            raise ErroArmazenamento(f"falha ao ler objeto (HTTP {resposta.status_code})")
-        return resposta.content
+        raise ErroArmazenamento(f"falha ao ler objeto (HTTP {resposta.status_code})")
 
     def existe(self, chave: str) -> bool:
         validar_chave(chave)
@@ -213,7 +223,9 @@ class ArmazenamentoSupabase:
             raise ErroArmazenamento(f"falha ao consultar objeto: {exc}") from exc
         if resposta.status_code == 200:
             return True
-        if resposta.status_code == 404:
+        # HEAD não tem corpo: o Storage responde 400 (não 404) para objeto
+        # inexistente, e 401/403 quando a credencial é o problema.
+        if resposta.status_code in (400, 404):
             return False
         raise ErroArmazenamento(f"falha ao consultar objeto (HTTP {resposta.status_code})")
 
@@ -223,8 +235,8 @@ class ArmazenamentoSupabase:
             resposta = self._cliente.delete(self._url(chave), headers=self._headers())
         except httpx.RequestError as exc:
             raise ErroArmazenamento(f"falha ao remover objeto: {exc}") from exc
-        # 404 é sucesso: a intenção "não existir mais" já está satisfeita.
-        if resposta.status_code in (200, 204, 404):
+        # Ausente é sucesso: a intenção "não existir mais" já está satisfeita.
+        if resposta.status_code in (200, 204) or _ausente(resposta):
             return
         raise ErroArmazenamento(f"falha ao remover objeto (HTTP {resposta.status_code})")
 
