@@ -85,6 +85,14 @@ def _mascarar(email: str | None) -> str:
     return f"{local[:1]}***@{dominio}"
 
 
+def _diferenca_migrations(locais: list[str], versoes: set[str]) -> dict[str, list[str]]:
+    """Compara nome completo do arquivo com `schema_migrations.versao`."""
+    return {
+        "faltando_no_servidor": sorted(set(locais) - versoes),
+        "no_servidor_sem_arquivo_local": sorted(versoes - set(locais)),
+    }
+
+
 # ---------------------------------------------------------------------------
 # Diagnóstico (somente leitura)
 # ---------------------------------------------------------------------------
@@ -94,9 +102,10 @@ def diagnostico(con) -> dict:
     cur.execute("SELECT version(), current_user, current_database()")
     versao, usuario, banco = cur.fetchone()
 
-    locais = sorted(p.name[:14] for p in DIR_MIGRACOES.glob("*.sql"))
+    locais = sorted(p.stem for p in DIR_MIGRACOES.glob("*.sql"))
     aplicadas = _q(cur, "SELECT versao::text AS versao, nome_arquivo FROM schema_migrations ORDER BY versao")
     versoes = {a["versao"] for a in aplicadas}
+    diferenca = _diferenca_migrations(locais, versoes)
 
     existentes = {r["table_name"] for r in _q(
         cur, "SELECT table_name FROM information_schema.tables WHERE table_schema='public'")}
@@ -140,6 +149,14 @@ def diagnostico(con) -> dict:
             )
         ] if "usuarios" in existentes else [],
     }
+    tabelas_com_tenant = {
+        r["table_name"]
+        for r in _q(
+            cur,
+            "SELECT table_name FROM information_schema.columns "
+            "WHERE table_schema='public' AND column_name='tenant_id'",
+        )
+    }
     con.rollback()
     return {
         "servidor": {"versao": versao.split(",")[0], "usuario_efetivo": usuario, "banco": banco},
@@ -147,14 +164,19 @@ def diagnostico(con) -> dict:
             "locais": len(locais),
             "aplicadas": len(aplicadas),
             "ultima_aplicada": aplicadas[-1] if aplicadas else None,
-            "faltando_no_servidor": [v for v in locais if v not in versoes],
-            "no_servidor_sem_arquivo_local": sorted(versoes - set(locais)),
+            **diferenca,
         },
         "tabelas": {
             "ausentes": [t for t in TABELAS_ESPERADAS if t not in existentes],
             "contagens": contagens,
         },
         "rls": rls,
+        "tabelas_tenant_sem_rls_ou_sem_policy": [
+            r["tabela"]
+            for r in rls
+            if r["tabela"] in tabelas_com_tenant
+            and (not r["habilitado"] or not r["forcado"] or not r["policies"])
+        ],
         "roles": roles,
         "storage": storage,
         "integridade": integridade,
@@ -454,7 +476,7 @@ def main(argv: list[str] | None = None) -> int:
             "servidor": d["servidor"],
             "migrations": {k: d["migrations"][k] for k in ("locais", "aplicadas", "ultima_aplicada", "faltando_no_servidor", "no_servidor_sem_arquivo_local")},
             "tabelas_ausentes": d["tabelas"]["ausentes"],
-            "tabelas_sem_rls_ou_sem_policy": [r["tabela"] for r in d["rls"] if not r["habilitado"] or not r["policies"]],
+            "tabelas_tenant_sem_rls_ou_sem_policy": d["tabelas_tenant_sem_rls_ou_sem_policy"],
             "construtoras": [c["nome"] for c in d["integridade"]["construtoras"]],
             "usuarios": len(d["integridade"]["usuarios_mascarados"]),
         }
