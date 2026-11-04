@@ -60,7 +60,7 @@ projeto remoto e o único bloqueio restante é a senha real do usuário
 
 ## Último commit de entrega
 
-`33b7e44` — test(ci): marca testes do Supabase local e exclui no CI.
+`6263fb0` — fix(diagnostico): valida URL-modelo e verifica env sem expor segredos.
 (Atualizações de bookkeeping deste arquivo não contam.)
 
 ## Próxima ação automática
