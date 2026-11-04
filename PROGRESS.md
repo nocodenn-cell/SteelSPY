@@ -49,9 +49,10 @@ a execução no projeto remoto continua **bloqueada** por credenciais (ver Bloqu
 | VC-01 em campo | fotografias do cenário real de recebimento e GPU (RTX 4070 não presente nesta máquina) |
 | Sprint 5 dados | ≥ 60 obras / ≥ 600 fotos rotuladas; sem isso, não há métrica honesta |
 
-## Último commit
+## Último commit de entrega
 
 `ad22f31` — feat(vc02): contratos de dataset e métricas para a Sprint 5.
+(Atualizações de bookkeeping deste arquivo não contam.)
 
 ## Próxima ação automática
 
