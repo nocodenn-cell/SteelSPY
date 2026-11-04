@@ -216,3 +216,27 @@ placeholder antes de abrir conexão; a senha da role vem de
 Depois do diagnóstico, o plano de migrations só é executado se a diferença for
 aditiva. `apply_migrations.py` recusa rodar como `stellspy_app`; a role é criada
 pela M15 e recebe a senha da M23 a partir de `STELLSPY_APP_PASSWORD`.
+
+---
+
+## 10. Revalidação local das 30 migrations (2026-11-04)
+
+Executada enquanto o acesso administrativo remoto está bloqueado. **Não substitui
+a homologação remota**; serve para provar que o pacote de migrations está
+completo e que a role operacional isola tenants corretamente.
+
+| Verificação | Resultado |
+|-------------|-----------|
+| PostgreSQL 16.15 (`stellspy-pg`, 55432) — suíte de integração | **177 passed, 1 deselected**; o conftest recria `public` e aplica 30/30 |
+| PostgreSQL 16.15 — suíte completa | **511 passed, 2 skipped** (os 2 marcados `supabase_local`) |
+| PostgreSQL 17.11 isolado (`stellspy-pg17`, 55433) — banco vazio | `apply_migrations.py` → **30 aplicadas**, 30 versões únicas |
+| Atributos da role `stellspy_app` | `super=f`, `bypassrls=f`, `createrole=f`, `createdb=f`, `login=t` |
+| RLS no PG 17 | 23 tabelas em `public`; **20 RLS + 20 FORCE + 20 políticas** |
+| Schema `storage` no PG puro | ausente; M30 é no-op (o bucket só nasce no Supabase) |
+| Isolamento com `stellspy_app` | sem `app.tenant_id` → 0 linhas; tenant A → só A; tenant B → só B; B consultando a obra de A → 0 |
+| Supabase local (API 54421, PG 54422) | `pytest -m supabase_local` → **2 passed**: ciclo real no bucket privado e API → bucket → download com hash |
+| Limpeza | container descartável `stellspy-pg17` removido após a coleta; nenhum outro stack tocado |
+
+O que ainda depende do remoto: criar role, aplicar as 30 migrations, criar o
+bucket `evidencias`, repetir a prova de RLS/isolamento e a HML no projeto
+`akvbtceshpsvsuacueaq`.

@@ -9,7 +9,9 @@ Sprint 4 homologada localmente sobre o próprio stack Supabase (PostgreSQL 17.11
 O projeto remoto foi alcançado e identificado, mas a autenticação administrativa
 foi **recusada pelo pooler** em 2026-11-04 (`password authentication failed`).
 Nenhuma migration, role ou bucket remoto foi criado: a execução parou antes de
-qualquer escrita (ver Bloqueios).
+qualquer escrita (ver Bloqueios). Enquanto o acesso remoto está bloqueado, as 30
+migrations foram revalidadas do zero em PostgreSQL 16.15 e 17.11 locais, com
+prova de RLS pela role operacional e Storage real no Supabase local.
 
 ## Concluído
 
@@ -41,6 +43,10 @@ qualquer escrita (ver Bloqueios).
 | Destravamento (B) | autenticação administrativa recusada | pooler de sessão (5432) e de transação (6543) devolvem `password authentication failed`; nenhuma escrita remota |
 | Destravamento (B) | regravação segura da senha | `scripts/configurar_senha_admin.py` lê no prompt oculto, percent-encoda e testa a conexão; 3 testes |
 | Destravamento (B) | validadores recusam senha sem codificação | `@`, `:`, `/`, `?`, `#`, `[`, `]` exigem percent-encoding; 26 testes dos helpers verdes |
+| Validação local (B) | 30 migrations do zero em PostgreSQL 16.15 | suíte de integração **177 passed** (recria schema e aplica 30/30); suíte completa **511 passed, 2 skipped** |
+| Validação local (B) | 30 migrations do zero em PostgreSQL 17.11 isolado | container descartável em 55433: `apply_migrations.py` → **30 aplicadas**; 30 versões únicas; role `stellspy_app` (`super=f bypassrls=f createrole=f createdb=f login=t`); 23 tabelas, 20 RLS + 20 FORCE + 20 políticas; `storage` ausente (M30 no-op) |
+| Validação local (B) | isolamento RLS com a role operacional no PG 17 | sem `app.tenant_id`: 0 linhas; tenant A vê só A; tenant B vê só B; B não enxerga obra de A |
+| Validação local (B) | Storage real contra o Supabase local | `pytest -m supabase_local` → **2 passed** (upload/leitura/duplicado/remoção + API → bucket privado → download) |
 
 ## Pendente
 
@@ -60,7 +66,6 @@ qualquer escrita (ver Bloqueios).
 |----------|-------------|
 | Autenticação administrativa | o pooler recusa a senha atual de `postgres.akvbtceshpsvsuacueaq` (`password authentication failed`). Confira/redo o valor no painel (Settings → Database) e regrave com `scripts/configurar_senha_admin.py`; nunca no chat |
 | Mutações remotas | sem a autenticação acima não há como criar a role, aplicar as 30 migrations, criar o bucket ou provar RLS no projeto oficial |
-| Suíte de integração nesta sessão | Docker Desktop parado; os 177 testes de integração exigem o container PostgreSQL em 55432 (evidência anterior segue válida) |
 | VC-01 em campo | fotografias do cenário real de recebimento e GPU (RTX 4070 não presente nesta máquina) |
 | Sprint 5 dados | ≥ 60 obras / ≥ 600 fotos rotuladas; sem isso, não há métrica honesta |
 
