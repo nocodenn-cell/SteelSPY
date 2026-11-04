@@ -6,9 +6,14 @@
 # 1. Instalar dependências
 pip install -r dashboard/requirements.txt
 
-# 2. Configurar variáveis (mesmo `.env` / ambiente da API)
-# DATABASE_URL — obrigatório
+# 2. Configurar variáveis (o dashboard NÃO usa a credencial da API)
+# DASHBOARD_DATABASE_URL — obrigatório, credencial de back-office (ex.: owner)
 # DASHBOARD_PASSWORD — opcional (tela de login)
+#
+# A `DATABASE_URL` da API usa `stellspy_app`, sujeita a RLS: sem contexto de
+# tenant ela vê zero obras, o que é correto para a API e inútil para o
+# dashboard. O diagnóstico na inicialização recusa essa credencial em vez de
+# exibir gráficos vazios.
 
 # 3. Na raiz do repositório
 set PYTHONPATH=backend
@@ -41,8 +46,10 @@ Linux/macOS: `export PYTHONPATH=backend`
 ## Segurança
 
 - Login opcional via `DASHBOARD_PASSWORD` (comparação de digest com `hmac.compare_digest` no app)
-- Acesso **direto ao Postgres** com a mesma `DATABASE_URL` da API — restringir rede / VPN em produção
+- Acesso **direto ao Postgres** com `DASHBOARD_DATABASE_URL` — credencial distinta da API, restringir rede / VPN em produção
+- A role da aplicação (`stellspy_app`) continua **sem** `BYPASSRLS`; o dashboard nunca deve reutilizá-la
 - Cache **`@st.cache_data`** (TTL 120–300 s) para reduzir carga no banco ao navegar filtros
+- Se a conexão não atravessar tenants, a tela para com mensagem explícita (usuário conectado e 0 obras), em vez de mostrar painel vazio
 
 ## Checklist produção (sugestão)
 

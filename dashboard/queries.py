@@ -1,5 +1,11 @@
 """
 Consultas somente leitura ao Postgres (mesmo schema da API).
+
+O dashboard cruza tenants por definição (lista todas as obras). Com as tabelas
+sob `FORCE ROW LEVEL SECURITY`, a role operacional `stellspy_app` só vê a obra
+do tenant definido na transação — sem contexto, a lista volta vazia. Por isso o
+dashboard precisa de uma credencial de back-office (`DASHBOARD_DATABASE_URL`) e
+avisa quando a conexão recebida está sujeita a RLS.
 """
 
 from __future__ import annotations
@@ -9,6 +15,16 @@ from datetime import date, datetime, timedelta, time, timezone
 import pandas as pd
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
+
+from dashboard.diagnostico import diagnostico_conexao
+
+__all__ = [
+    "diagnostico_conexao",
+    "get_engine",
+    "listar_obras",
+    "carregar_nfe_itens_periodo",
+    "carregar_nfes_resumo",
+]
 
 
 def get_engine(database_url: str) -> Engine:

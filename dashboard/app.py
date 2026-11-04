@@ -8,7 +8,12 @@ Execução (raiz do repo):
   set PYTHONPATH=backend
   streamlit run dashboard/app.py
 
-Requer DATABASE_URL (igual à API) e, opcionalmente, DASHBOARD_PASSWORD.
+Requer DASHBOARD_DATABASE_URL (credencial de back-office) e, opcionalmente,
+DASHBOARD_PASSWORD.
+
+Como as tabelas estão sob FORCE RLS, o dashboard — que lista obras de todos os
+tenants — precisa de uma credencial de back-office em `DASHBOARD_DATABASE_URL`.
+Sem ela, a conexão da API (`stellspy_app`) devolve zero obras e o app avisa.
 """
 
 from __future__ import annotations
@@ -29,7 +34,18 @@ import plotly.express as px
 import streamlit as st
 
 from dashboard.metros import metros_do_item
-from dashboard.queries import carregar_nfes_resumo, carregar_nfe_itens_periodo, get_engine, listar_obras
+from dashboard.queries import (
+    carregar_nfes_resumo,
+    carregar_nfe_itens_periodo,
+    diagnostico_conexao,
+    get_engine,
+    listar_obras,
+)
+
+
+@st.cache_data(ttl=300, show_spinner="Conexão…")
+def _cached_diagnostico(database_url: str):
+    return diagnostico_conexao(get_engine(database_url))
 
 
 @st.cache_data(ttl=300, show_spinner="Obras…")
@@ -125,9 +141,25 @@ def main() -> None:
     if not _check_password():
         return
 
-    db_url = os.getenv("DATABASE_URL", "").strip()
+    db_url = (os.getenv("DASHBOARD_DATABASE_URL") or os.getenv("DATABASE_URL") or "").strip()
     if not db_url:
-        st.error("Defina `DATABASE_URL` no ambiente (mesma string da API).")
+        st.error(
+            "Defina `DASHBOARD_DATABASE_URL` com uma credencial de back-office "
+            "(leitura cross-tenant). A `DATABASE_URL` da API usa a role operacional "
+            "`stellspy_app`, sujeita a RLS."
+        )
+        st.stop()
+
+    diag = _cached_diagnostico(db_url)
+    if diag["obras_visiveis"] == 0 and not (diag["superusuario"] or diag["bypass_rls"]):
+        # Zero obras aqui não significa banco vazio: significa RLS sem contexto.
+        # Dizer "nenhuma obra no banco" faria alguém procurar um problema que não existe.
+        st.error(
+            "A conexão do dashboard está sujeita a RLS e não tem contexto de tenant, "
+            "então nenhuma obra é visível. Use uma credencial de back-office em "
+            "`DASHBOARD_DATABASE_URL`; a role da aplicação continua sem BYPASSRLS."
+        )
+        st.caption(f"usuário conectado: {diag['usuario']} · obras visíveis: 0")
         st.stop()
 
     st.sidebar.title("Filtros")
