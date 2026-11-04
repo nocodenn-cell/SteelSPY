@@ -6,10 +6,10 @@
 
 **FASE B — integração ao Supabase oficial (`akvbtceshpsvsuacueaq`).**
 Sprint 4 homologada localmente sobre o próprio stack Supabase (PostgreSQL 17.11).
-O destravamento remoto avançou até onde não depende da senha administrativa:
-projeto, Auth, REST e Storage respondem; a role operacional **não existe** no
-projeto remoto e o único bloqueio restante é a senha real do usuário
-`postgres.<ref>` (ver Bloqueios).
+O projeto remoto foi alcançado e identificado, mas a autenticação administrativa
+foi **recusada pelo pooler** em 2026-11-04 (`password authentication failed`).
+Nenhuma migration, role ou bucket remoto foi criado: a execução parou antes de
+qualquer escrita (ver Bloqueios).
 
 ## Concluído
 
@@ -36,12 +36,17 @@ projeto remoto e o único bloqueio restante é a senha real do usuário
 | Destravamento (B) | rede do pooler e ausência da role operacional | DNS + TCP `aws-0-us-east-2.pooler.supabase.com:5432` OK; login `stellspy_app.<ref>` → `user not found in the database` |
 | Destravamento (B) | configuração local corrigida | senha da role gerada com 43 caracteres; `DATABASE_URL` aponta para pooler real:5432; `EVIDENCIAS_STORAGE=supabase` |
 | Destravamento (B) | schema remoto ainda vazio | PostgREST devolve `PGRST205` para `schema_migrations`, `construtoras`, `obras` e `evidencias`; as 30 migrations serão inicialização aditiva, não alteração de dados existentes |
+| Destravamento (B) | configuração local aprovada | `verificar_env_supabase.py` → 0 bloqueios, 2 avisos; URL administrativa com senha percent-encoded |
+| Destravamento (B) | projeto remoto identificado no diagnóstico | `akvbtceshpsvsuacueaq`, pooler `aws-0-us-east-2`, TCP OK; conexão parou em autenticação |
+| Destravamento (B) | autenticação administrativa recusada | pooler de sessão (5432) e de transação (6543) devolvem `password authentication failed`; nenhuma escrita remota |
+| Destravamento (B) | regravação segura da senha | `scripts/configurar_senha_admin.py` lê no prompt oculto, percent-encoda e testa a conexão; 3 testes |
+| Destravamento (B) | validadores recusam senha sem codificação | `@`, `:`, `/`, `?`, `#`, `[`, `]` exigem percent-encoding; 26 testes dos helpers verdes |
 
 ## Pendente
 
-- Substituir **apenas** a senha-modelo de `SUPABASE_DB_ADMIN_URL` pela senha real
-  de `postgres.<ref>` (painel → Database → Connection string → Session pooler).
-- Rodar diagnóstico remoto, revisar divergências e aplicar as migrations pendentes.
+- Regravar a senha correta de `postgres.<ref>` com
+  `python scripts/configurar_senha_admin.py` (prompt oculto; não vai para o histórico).
+- Repetir o diagnóstico remoto e aplicar as 30 migrations pendentes.
 - Rodar `hml_staging.py --acao tudo` no projeto oficial e reexecutar para idempotência.
 - Homologação funcional HTTP + PWA contra o banco oficial (o fluxo já passa localmente).
 - Sprint 5: coletar e anonimizar fotografias do recebimento real; depois anotar,
@@ -53,30 +58,32 @@ projeto remoto e o único bloqueio restante é a senha real do usuário
 
 | Bloqueio | O que falta |
 |----------|-------------|
-| Diagnóstico remoto | senha real de `postgres.akvbtceshpsvsuacueaq` dentro de `SUPABASE_DB_ADMIN_URL` (o valor atual é `[SENHA_POSTGRES]`). Colocar em `backend/.env`, nunca no chat |
-| Mutações remotas | sem a credencial acima não há como criar a role, aplicar as 30 migrations, criar o bucket ou provar RLS no projeto oficial |
+| Autenticação administrativa | o pooler recusa a senha atual de `postgres.akvbtceshpsvsuacueaq` (`password authentication failed`). Confira/redo o valor no painel (Settings → Database) e regrave com `scripts/configurar_senha_admin.py`; nunca no chat |
+| Mutações remotas | sem a autenticação acima não há como criar a role, aplicar as 30 migrations, criar o bucket ou provar RLS no projeto oficial |
 | Suíte de integração nesta sessão | Docker Desktop parado; os 177 testes de integração exigem o container PostgreSQL em 55432 (evidência anterior segue válida) |
 | VC-01 em campo | fotografias do cenário real de recebimento e GPU (RTX 4070 não presente nesta máquina) |
 | Sprint 5 dados | ≥ 60 obras / ≥ 600 fotos rotuladas; sem isso, não há métrica honesta |
 
 ## Último commit de entrega
 
-`6263fb0` — fix(diagnostico): valida URL-modelo e verifica env sem expor segredos.
+`35a5ca3` — fix(config): exige percent-encoding na senha e grava sem expor.
 (Atualizações de bookkeeping deste arquivo não contam.)
 
 ## Próxima ação automática
 
-1. Conferir a configuração local sem expor segredos:
+1. Regravar a senha administrativa correta no prompt oculto (ela não aparece
+   no terminal nem no histórico):
+
+   ```
+   cd backend && python scripts/configurar_senha_admin.py
+   ```
+
+   Hoje a senha gravada é recusada pelo pooler; o helper já testa a conexão.
+
+2. Conferir a configuração e rodar o diagnóstico read-only:
 
    ```
    cd backend && python scripts/verificar_env_supabase.py
-   ```
-
-   Hoje: `1 bloqueio` — `SUPABASE_DB_ADMIN_URL` com placeholder.
-
-2. Assim que a senha real estiver no `.env`, rodar o diagnóstico read-only:
-
-   ```
    cd backend && python scripts/diagnostico_supabase.py
    ```
 

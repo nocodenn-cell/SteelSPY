@@ -31,7 +31,9 @@ Estado em 2026-11-04 (`backend/.env`, verificado sem exibir valores):
 - `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` e `PWA_SESSION_SECRET`: reais e válidos.
 - `STELLSPY_APP_PASSWORD`: gerada localmente com 43 caracteres (≥ 12).
 - `DATABASE_URL`: role operacional no pooler real, porta 5432.
-- `SUPABASE_DB_ADMIN_URL`: **bloqueada** — a senha ainda é `[SENHA_POSTGRES]`.
+- `SUPABASE_DB_ADMIN_URL`: senha presente e percent-encoded, mas **recusada**
+  pelo pooler em 2026-11-04 (`password authentication failed`). Regravar com
+  `python scripts/configurar_senha_admin.py`.
 
 ---
 
@@ -177,7 +179,7 @@ No banco remoto, repetir as seções 1–6 e marcar cada item.
 
 ## 9. Estado do destravamento remoto (2026-11-04)
 
-Executado só leitura, sem a senha administrativa:
+Executado em 2026-11-04:
 
 | Verificação | Resultado |
 |-------------|-----------|
@@ -187,19 +189,23 @@ Executado só leitura, sem a senha administrativa:
 | Pooler | DNS resolve e TCP `aws-0-us-east-2.pooler.supabase.com:5432` responde em ~0,25 s |
 | Role `stellspy_app` | **ausente** — login devolve `user not found in the database` |
 | Schema remoto | nenhuma tabela do SteelSPY exposta: `schema_migrations`, `construtoras`, `obras` e `evidencias` → `404 PGRST205`; 0/30 migrations (inicialização aditiva) |
-| `SUPABASE_DB_ADMIN_URL` | placeholder `[SENHA_POSTGRES]`; nenhum arquivo local tem a senha real |
+| Autenticação administrativa | **recusada** em 5432 e 6543: `password authentication failed for user "postgres"` |
+| Migrations remotas | **0 aplicadas**; execução interrompida antes de qualquer escrita |
 | Suíte unitária após as correções | **325 passed** |
-| Testes do diagnóstico | **17 passed** |
+| Testes dos helpers (diagnóstico, runner, senha) | **26 passed** |
 
 Destrave (sem colar segredo no chat):
 
 ```bash
 cd backend
-# 1) edite APENAS a senha em SUPABASE_DB_ADMIN_URL (Session pooler, usuário postgres.<ref>)
-python scripts/verificar_env_supabase.py   # precisa terminar sem BLOQUEADO
-python scripts/diagnostico_supabase.py     # read-only; gera .devtmp/supabase_oficial_diag.json
+# 1) regrave a senha correta no prompt oculto; o helper percent-encoda e testa
+python scripts/configurar_senha_admin.py
 
-# revisado o relatório e confirmado que só há migrations pendentes:
+# 2) confirme a configuração e rode o diagnóstico read-only
+python scripts/verificar_env_supabase.py   # precisa terminar sem BLOQUEADO
+python scripts/diagnostico_supabase.py     # gera .devtmp/supabase_oficial_diag.json
+
+# 3) revisado o relatório e confirmado que só há migrations pendentes:
 python scripts/apply_migrations.py --env-file .env
 ```
 
