@@ -11,6 +11,7 @@ nenhuma foto real toca o disco do projeto.
 from __future__ import annotations
 
 import io
+import os
 import uuid
 from typing import Any
 
@@ -540,5 +541,65 @@ def test_upload_com_storage_supabase_isola_por_tenant_e_nao_expoe_credencial(
         assert "service-role-de-teste" not in r.text
         assert "storage_key" not in r.text
     finally:
+        arm.definir_backend(None)
+
+
+@pytest.mark.skipif(
+    not (os.getenv("SUPABASE_TEST_URL") and os.getenv("SUPABASE_TEST_SECRET")),
+    reason="defina SUPABASE_TEST_URL e SUPABASE_TEST_SECRET (Supabase local ativo)",
+)
+def test_upload_real_no_storage_supabase_grava_serve_e_isola(
+    cliente: Any, usuarios: dict[str, Any], sql_owner: Any
+) -> None:
+    """E2E de verdade: API -> bucket privado do Supabase -> download com hash."""
+    url = os.environ["SUPABASE_TEST_URL"]
+    backend = arm.ArmazenamentoSupabase(
+        url,
+        os.environ["SUPABASE_TEST_SECRET"],
+        os.environ.get("SUPABASE_TEST_BUCKET", "evidencias"),
+    )
+    arm.definir_backend(backend)
+    chaves: set[str] = set()
+    try:
+        csrf = _login(cliente, usuarios["emails"]["fiscal"])
+        conteudo = imagem_png((10, 120, 220))
+        r = _upload(cliente, str(usuarios["obra_a"]), conteudo, csrf=csrf)
+        assert r.status_code == 201, r.text
+        criada = r.json()
+
+        with sql_owner.connect() as conn:
+            linha = conn.execute(
+                text(
+                    "SELECT storage_key, storage_key_original FROM evidencias WHERE id = :id"
+                ),
+                {"id": criada["id"]},
+            ).mappings().first()
+        assert linha is not None
+        chaves = {linha["storage_key"], linha["storage_key_original"]}
+
+        normalizada = cliente.get(f"/evidencias/{criada['id']}/conteudo")
+        assert normalizada.status_code == 200
+        assert normalizada.content.startswith(b"\xff\xd8\xff")
+        assert normalizada.headers["x-conteudo-sha256"] == criada["sha256"]
+
+        original = cliente.get(
+            f"/evidencias/{criada['id']}/conteudo", params={"variante": "original"}
+        )
+        assert original.status_code == 200
+        assert original.content == conteudo
+        assert original.headers["x-conteudo-sha256"] == criada["sha256_original"]
+
+        # Nenhuma rota pública: sem apikey, o objeto não é servido.
+        publico = httpx.get(f"{url}/storage/v1/object/evidencias/{linha['storage_key']}")
+        assert publico.status_code in (400, 401, 403, 404)
+        assert publico.content != original.content
+
+        # Outra construtora não abre a evidência, mesmo com a role da aplicação.
+        _login(cliente, usuarios["emails"]["admin_b"])
+        cruzado = cliente.get(f"/evidencias/{criada['id']}/conteudo")
+        assert cruzado.status_code in (403, 404)
+    finally:
+        for chave in chaves:
+            backend.remover(chave)
         arm.definir_backend(None)
 

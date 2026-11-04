@@ -159,8 +159,9 @@ com as 30 migrações e a role operacional — falta repetir no projeto remoto:
 | Role `stellspy_app` | `NOBYPASSRLS`, `NOSUPERUSER` |
 | Bucket `evidencias` | privado (`public=false`), 12 MiB, JPEG/PNG |
 | Suíte de integração | 177 passed (RLS, auth, pedidos, NF-e, recebimento, evidências, dossiê) |
-| Suíte completa do backend | 475 passed |
+| Suíte completa do backend | 476 passed |
 | Storage real (upload/leitura/duplicado/remoção) | 1 passed contra a API local |
+| E2E API → Storage privado → download com hash | 1 passed (original byte a byte, isolamento entre construtoras) |
 | HML `--acao tudo` | 12/12 PASS com `stellspy_app` |
 
 No banco remoto, repetir as seções 1–6 e marcar cada item.
