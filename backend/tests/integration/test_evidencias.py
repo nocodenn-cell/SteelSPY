@@ -14,6 +14,7 @@ import io
 import uuid
 from typing import Any
 
+import httpx
 import pytest
 from fastapi.testclient import TestClient
 from PIL import Image
@@ -507,3 +508,37 @@ def test_trilha_de_auditoria_registra_recebimento_e_download(
         ]
     assert tipos[:2] == ["recebida", "armazenada"]
     assert "baixada" in tipos
+
+
+def test_upload_com_storage_supabase_isola_por_tenant_e_nao_expoe_credencial(
+    cliente: Any, usuarios: dict[str, Any]
+) -> None:
+    """O caminho do objeto começa pelo tenant — e a service role fica no header."""
+    enviados: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        enviados.append(request)
+        return httpx.Response(200, json={"Key": "ok"})
+
+    backend = arm.ArmazenamentoSupabase(
+        "https://akvbtceshpsvsuacueaq.supabase.co",
+        "service-role-de-teste",
+        "evidencias",
+        cliente=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+    arm.definir_backend(backend)
+    try:
+        csrf = _login(cliente, usuarios["emails"]["fiscal"])
+        r = _upload(cliente, str(usuarios["obra_a"]), imagem_png(), csrf=csrf)
+        assert r.status_code == 201, r.text
+
+        assert len(enviados) == 2  # original + normalizada
+        prefixo = f"/storage/v1/object/evidencias/{usuarios['tenant_a']}/{usuarios['obra_a']}/"
+        assert all(prefixo in str(req.url) for req in enviados)
+        assert all(req.headers["authorization"] == "Bearer service-role-de-teste" for req in enviados)
+
+        assert "service-role-de-teste" not in r.text
+        assert "storage_key" not in r.text
+    finally:
+        arm.definir_backend(None)
+

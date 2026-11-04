@@ -68,6 +68,23 @@ def versoes_aplicadas(conn) -> set[str]:
     # o commit é feito pelo chamador
 
 
+ROLES_SEM_DDL = frozenset({"stellspy_app", "anon", "authenticated"})
+
+
+def validar_role_migracao(conn) -> None:
+    """Recusa rodar DDL com a role operacional — RLS e privilégios seriam contornados."""
+    with conn.cursor() as cur:
+        cur.execute("SELECT current_user, has_schema_privilege(current_user, 'public', 'CREATE')")
+        usuario, pode_criar = cur.fetchone()
+    if usuario in ROLES_SEM_DDL:
+        raise RuntimeError(
+            f"migrações não podem rodar como {usuario!r}; use a role administrativa "
+            "(--url ou SUPABASE_DB_ADMIN_URL)"
+        )
+    if not pode_criar:
+        raise RuntimeError(f"role {usuario!r} sem CREATE no schema public")
+
+
 def aplicar(conn, arquivo: Path, versao: str) -> None:
     sql = arquivo.read_text(encoding="utf-8")
     with conn.cursor() as cur:
@@ -103,6 +120,11 @@ def main(argv: list[str] | None = None) -> int:
 
     conn = conectar(args.url, app_password)
     try:
+        try:
+            validar_role_migracao(conn)
+        except RuntimeError as exc:
+            print(f"ERRO: {exc}", file=sys.stderr)
+            return 2
         aplicadas = versoes_aplicadas(conn)
         conn.commit()
 

@@ -1,112 +1,140 @@
-# Checklist — Go-live Supabase + variáveis de ambiente
+# Checklist — Supabase oficial do SteelSPY
 
-Trilha escolhida: colocar **banco + API** prontos para o piloto antes do PWA. Siga na ordem; marque cada item.
+Projeto oficial: **SteelSPY** — `akvbtceshpsvsuacueaq`
+URL: `https://akvbtceshpsvsuacueaq.supabase.co`
 
----
-
-## 1. Projeto Supabase
-
-- [ ] Confirme que está no projeto certo (ex.: **spysteel** — veja **Settings → General → Project ID**).
-- [ ] Anote a **URL** do projeto: `https://<PROJECT_REF>.supabase.co` (útil para `SUPABASE_URL` e Storage).
+Este é o único projeto Supabase do SteelSPY. Não usar projetos de outros produtos
+(Venddi, Jinlong, FABRYON, GEO Portal) nem trocar a `DATABASE_URL` para outro ref.
 
 ---
 
-## 2. Migrações SQL (schema)
+## 0. Credenciais (nunca no chat, nunca no Git)
 
-No **SQL Editor**, rode **na ordem** os ficheiros em `supabase/migrations/` (ou use Supabase CLI: `supabase db push` com o projeto ligado):
+Copie para `backend/.env` (já ignorado). O chat e o repositório nunca recebem
+senha nem `service_role`.
 
-1. `20260410120000_core_schema.sql`
-2. `20260410200000_nfe_logs_foto_url.sql`
-3. `20260410210000_nfe_itens_resumo_devolucao.sql`
-4. `20260410230000_nfe_logs_laudo_storage.sql`
-5. `20260410240000_obras_api_key_idempotencia.sql`
+| Variável | Onde obter | Uso |
+|----------|------------|-----|
+| `SUPABASE_DB_ADMIN_URL` | Project Settings → Database → Connection string → **Session pooler** (`postgres.<ref>`) | somente migrations e diagnóstico |
+| `STELLSPY_APP_PASSWORD` | escolhida por você, ≥ 12 caracteres | senha da role operacional `stellspy_app` |
+| `DATABASE_URL` | mesma tela, usuário `stellspy_app.<ref>` (Supavisor usa `<role>.<tenant>`) | processo da API, sujeito a RLS |
+| `SUPABASE_URL` | Project Settings → API | Storage/laudo |
+| `SUPABASE_ANON_KEY` | Project Settings → API (publishable) | cliente, se usado |
+| `SUPABASE_SERVICE_ROLE_KEY` | Project Settings → API (secret) | **só servidor** (`EVIDENCIAS_STORAGE=supabase`) |
 
-**Verificação rápida:**
+- [ ] `DATABASE_URL` usa `stellspy_app.<ref>`, **nunca** `postgres.<ref>`.
+- [ ] `SUPABASE_DB_ADMIN_URL` fica fora do processo da API.
+- [ ] Nenhuma chave `service_role` em variável `NEXT_PUBLIC_*`, PWA ou log.
 
-```sql
-SELECT column_name FROM information_schema.columns
-WHERE table_name = 'obras' AND column_name = 'api_key';
--- deve retornar 1 linha
+---
 
-SELECT constraint_name FROM information_schema.table_constraints
-WHERE table_name = 'nfe_logs' AND constraint_type = 'UNIQUE';
--- deve incluir a unicidade obra+chave
+## 1. Confirmar o projeto
+
+- [ ] `curl -sI https://akvbtceshpsvsuacueaq.supabase.co/rest/v1/ | grep sb-project-ref`
+      deve responder `sb-project-ref: akvbtceshpsvsuacueaq` (401 sem `apikey` é o esperado).
+- [ ] Região = trecho do host do pooler (`aws-0-<região>.pooler.supabase.com`).
+- [ ] Versão do PostgreSQL e PostGIS vêm do diagnóstico abaixo.
+
+---
+
+## 2. Diagnóstico read-only (antes de qualquer escrita)
+
+```bash
+cd backend
+python scripts/diagnostico_supabase.py            # lê backend/.env
 ```
 
+Grava `.devtmp/supabase_oficial_diag.json` (ignorado) e mostra um resumo com:
+ref, região, versão do PostgreSQL/PostGIS, extensões, schemas, tabelas, RLS/Force,
+policies, roles, `schema_migrations`, buckets e Auth. A conexão é aberta em
+transação `READ ONLY`; nada é criado ou alterado.
+
+- [ ] `projeto_confere: true`
+- [ ] `tabelas_esperadas_ausentes: []`
+- [ ] `app_sem_bypassrls: true`
+- [ ] `tenant_sem_rls: []`
+- [ ] `migrations_pendentes` conhecido (projeto novo ⇒ todas as 30)
+
 ---
 
-## 3. Dados mínimos para um teste
+## 3. Migrações (30 arquivos, mesma trilha do repositório)
 
-- [ ] **Obra:** pelo menos uma linha em `obras` com `cnpj_destinatario` (14 dígitos), políticas desejadas e **`api_key`** preenchida (a migração gera para as existentes; novas obras recebem default).
-- [ ] **Especificação:** pelo menos uma linha em `especificacoes` para essa `obra_id` (bitola, marca, qtd planejada em metros).
+Não existe um segundo sistema de migração: `backend/scripts/apply_migrations.py`
+aplica `supabase/migrations/*.sql` em ordem, uma transação por arquivo, e registra
+em `schema_migrations`. O runner **recusa** rodar como `stellspy_app`.
 
-**Obter a API Key da obra para o PWA/cURL:**
+```bash
+cd backend
+export SUPABASE_DB_ADMIN_URL='postgresql://postgres.akvbtceshpsvsuacueaq:...@aws-0-<região>.pooler.supabase.com:5432/postgres'
+export STELLSPY_APP_PASSWORD='<senha-≥12>'
 
-```sql
-SELECT id, nome, api_key FROM obras;
+python scripts/apply_migrations.py --url "$SUPABASE_DB_ADMIN_URL"
 ```
 
-Guarde a `api_key` em lugar seguro (1Password, etc.). **Não** commite no Git.
+- [ ] Pooler em modo **sessão** (porta 5432): a senha da role é configurada por sessão.
+- [ ] Projeto novo: 30 pendentes, todas aplicadas.
+- [ ] Projeto com histórico: só as pendentes rodam; não há `DROP` nem `TRUNCATE`.
+- [ ] Reexecutar: `pendentes: 0` (idempotente).
+
+A migração 30 cria o bucket privado `evidencias`. Em PostgreSQL puro (sem schema
+`storage`) ela apenas registra e segue.
 
 ---
 
-## 4. Storage (opcional, laudo em cache)
+## 4. Prova de isolamento multiempresa
 
-- [ ] Crie o bucket **`laudos`** (ou o nome em `LAUDO_STORAGE_BUCKET`).
-- [ ] Torne o bucket **público** para leitura **ou** ajuste depois para URLs assinadas (MVP: público é mais simples).
-- [ ] Preencha `SUPABASE_URL` e `SUPABASE_SERVICE_ROLE_KEY` (Settings → API → **service_role** — só no servidor).
+Depois das migrações, com a role operacional:
 
-Se não configurar Storage, o `GET /laudo.pdf` ainda **funciona**: devolve o PDF inline.
+```bash
+HML_SENHA='<senha-hml-≥12>' python scripts/hml_staging.py --acao tudo \
+  --admin-url "$SUPABASE_DB_ADMIN_URL" \
+  --app-url "postgresql://stellspy_app.<ref>:<senha-app>@aws-0-<região>.pooler.supabase.com:5432/postgres" \
+  --prefixo hml-oficial-2026-11-03
+```
 
----
+- [ ] 12/12 checks PASS (B não vê A, updates cruzados afetam 0 linhas).
+- [ ] Reexecução com o mesmo prefixo não duplica nada.
+- [ ] Limpeza só com `--acao limpar --confirmar-limpeza` e prefixo `hml-*`.
 
-## 5. `DATABASE_URL` na API
-
-- [ ] **Settings → Database** → connection string (use **pooler** em produção se a Supabase recomendar; formato `postgresql+psycopg2://...` como em `backend/.env.example`).
-- [ ] Teste local: `cd backend && uvicorn app.main:app --reload` com `.env` carregado (ou export manual).
-
----
-
-## 6. Variáveis de ambiente em produção
-
-Copie de `backend/.env.example` e defina no painel do host (Render, Fly, etc.):
-
-| Variável | Obrigatório piloto? | Notas |
-|----------|---------------------|--------|
-| `DATABASE_URL` | Sim | String Postgres do Supabase |
-| `SKIP_API_KEY` | Sim → **0** ou vazio | Nunca `1` em produção |
-| `CORS_ALLOW_ORIGINS` | Sim quando houver PWA | Origem exata, ex. `https://app.steelspy.com.br` |
-| `NFE_IO_TOKEN` | Sim se não usar mock | Sem token a API não busca NF real |
-| `NFE_IO_MOCK` | Só dev | `1` só para demo sem NFe.io |
-| `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` | Não | Só se quiser cache do PDF no Storage |
-| `LAUDO_STORAGE_BUCKET` | Não | Default `laudos` |
+Teste feito com `service_role` **não** vale como prova de isolamento.
 
 ---
 
-## 7. Smoke test (após deploy ou local)
+## 5. Storage privado
 
-Substitua `BASE`, `OBRA_ID`, `CHAVE44`, `API_KEY`:
+- [ ] Bucket `evidencias` existe e é **privado** (`public = false`).
+- [ ] `EVIDENCIAS_STORAGE=supabase` e `EVIDENCIAS_BUCKET=evidencias` no servidor.
+- [ ] Chaves começam por `tenant_id/obra_id/evidencia_id/…` (auditável por construtora).
+- [ ] Upload grava original + normalizado, cada um com SHA-256 próprio.
+- [ ] Download passa pela API, que confere o hash antes de servir.
+- [ ] Nenhuma URL pública de fotografia.
+
+O bucket `laudos` (PDF) é opcional; sem ele o laudo é devolvido inline. Se for
+criado, prefira privado com URL assinada — link público de dossiê é decisão de
+produto, não default.
+
+---
+
+## 6. Smoke test da API
 
 ```bash
 curl -s -X POST "$BASE/conferir" \
-  -H "Content-Type: application/json" \
-  -H "X-API-KEY: $API_KEY" \
+  -H "Content-Type: application/json" -H "X-API-KEY: $API_KEY" \
   -d "{\"obra_id\":\"$OBRA_ID\",\"chave_acesso\":\"$CHAVE44\"}"
 ```
 
-- [ ] Resposta JSON com `status`, `nfe_log_id` (ou `PENDENTE` se XML indisponível).
-- [ ] `GET $BASE/conferir/<nfe_log_id>/laudo.pdf` com o mesmo header `X-API-KEY` → PDF ou redirect.
+- [ ] JSON com `status` e `nfe_log_id`.
+- [ ] `GET $BASE/conferir/<id>/laudo.pdf` devolve PDF.
+- [ ] Upload de evidência devolve 201 e o download confere o hash.
 
 ---
 
-## 8. Segurança
+## 7. Invariantes de segurança
 
-- [ ] **Não** commitar `.env` nem `service_role` no repositório.
-- [ ] Chave **anon/publishable** do Supabase é para **cliente** (JS no browser); a API Python usa **`DATABASE_URL`** e, se aplicável, **`SUPABASE_SERVICE_ROLE_KEY`** só no servidor.
-- [ ] Rotacione qualquer chave que tenha vazado em chat/issue.
-
----
-
-## Próximo passo (outra trilha)
-
-Quando este checklist estiver verde, a trilha **PWA mínimo** chama o mesmo `POST /conferir` com `X-API-KEY` e a origem já listada em `CORS_ALLOW_ORIGINS`.
+- [ ] `SKIP_API_KEY=0` em qualquer ambiente real.
+- [ ] `PWA_SESSION_SECRET` longo e aleatório (≥ 32 bytes).
+- [ ] `CORS_ALLOW_ORIGINS` com origens exatas.
+- [ ] Role `stellspy_app`: `NOSUPERUSER`, `NOBYPASSRLS`, sem `CREATEROLE`.
+- [ ] RLS habilitada e `FORCE` nas tabelas com `tenant_id`.
+- [ ] Sem `service_role` em código de cliente.
+- [ ] Chave que apareceu em chat/issue deve ser rotacionada no painel.

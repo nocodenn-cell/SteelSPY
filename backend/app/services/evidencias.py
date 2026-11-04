@@ -304,9 +304,9 @@ def criar_evidencia(
         tenant_id, obra_id, evidencia_id, normalizada["ext_original"]
     )
 
-    armazenamento = backend_padrao()
     gravadas: list[str] = []
     try:
+        armazenamento = backend_padrao()
         armazenamento.gravar(chave_original, conteudo)
         gravadas.append(chave_original)
         armazenamento.gravar(chave_norm, normalizada["conteudo"])
