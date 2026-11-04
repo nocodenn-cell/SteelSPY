@@ -16,7 +16,7 @@ Legenda de impacto: **A** = bloqueia o piloto; **B** = degrada a operação;
 | R1 | Câmera/permissões nunca testadas em aparelho real | alta | A | **Não comprovado.** Só há teste automatizado de contrato; o roteiro físico não foi executado | Executar `docs/sprint5/ROTEIRO_TESTE_MANUAL_MOBILE.md` com capturas |
 | R2 | ADB ausente na máquina de desenvolvimento | alta | A | `preparar_android.py` retornou exit 2 ("ADB NÃO ENCONTRADO") | Instalar `platform-tools` (custo zero) ou usar aparelho com ADB já instalado |
 | R3 | Backup/restauração não ensaiados | média | A | Procedimento escrito; **nenhum dump/restore executado** | Ensaio em banco descartável antes do GO |
-| R4 | `CORS_ALLOW_ORIGINS` vazio no `.env` local | alta | A para PWA em outra origem | Auditoria: AVISO. A API agora recusa config ambígua no boot | Definir a origem HTTPS exata do PWA |
+| R4 | `CORS_ALLOW_ORIGINS` de produção ainda não definido | média | A na publicação | **Piloto local fechado:** `localhost` e `127.0.0.1:8080`, preflight de `POST`/`DELETE` e 21 testes; a API recusa config ambígua no boot | Informar a origem HTTPS exata no ambiente publicado |
 | R5 | `NFE_IO_MOCK=1` no ambiente local | alta | A se usado no piloto | Auditoria: AVISO | `NFE_IO_MOCK=0` e token real, ou fluxo manual de NF-e explicitamente aceito |
 | R6 | Dashboard sem credencial configurada | alta | B | `DASHBOARD_DATABASE_URL` ausente; role de menor privilégio pronta e testada | Definir URL da role `stellspy_dashboard` + `DASHBOARD_TENANT_ID` |
 

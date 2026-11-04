@@ -38,7 +38,7 @@ Senha padrão: `SenhaForte#123`.
 #    (a senha da role de app é a mesma que o seed_demo usou)
 $env:DATABASE_URL="postgresql+psycopg2://stellspy_app:dev-local-app-password@localhost:55432/stellspy_demo"
 $env:PWA_COOKIE_SECURE="0"          # HTTP local: o cookie não pode exigir TLS
-$env:CORS_ALLOW_ORIGINS="http://localhost:8080"
+$env:CORS_ALLOW_ORIGINS="http://localhost:8080,http://127.0.0.1:8080"
 ..\.venv\Scripts\python.exe -m uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
 

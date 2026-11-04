@@ -17,7 +17,7 @@ Orçamento adicional R$ 0,00 — usa apenas a infraestrutura já contratada.
 | 1 | Suíte backend verde | `cd backend && ..\.venv\Scripts\python.exe -m pytest -q -m "not supabase_local"` | 0 falhas; schema recriado com **31 migrations** |
 | 2 | Suíte PWA verde | `cd pwa && npm test` | 0 falhas |
 | 3 | Auditoria de configuração | `cd backend && ..\.venv\Scripts\python.exe scripts\auditar_publicacao.py` | **0 bloqueios**; avisos revisados item a item |
-| 4 | CORS com origens exatas | `CORS_ALLOW_ORIGINS` preenchido, sem `*`, sem caminho, sem `null` | `origens_permitidas` aceita; boot da API sem `RuntimeError` |
+| 4 | CORS com origens exatas | `CORS_ALLOW_ORIGINS` preenchido, sem `*`, sem caminho, sem `null` | Piloto local: 2 origens (`localhost` e `127.0.0.1:8080`); preflight de `POST` e `DELETE` liberado; auditoria `OK` |
 | 5 | Credencial da API é operacional | usuário da `DATABASE_URL` = `stellspy_app.<ref>` | auditoria: `DATABASE_URL OK` |
 | 6 | Dashboard com menor privilégio | `DASHBOARD_DATABASE_URL` = role `stellspy_dashboard`; `DASHBOARD_TENANT_ID` = UUID da construtora do piloto | `test_dashboard_rls.py` + auditoria sem bloqueio |
 | 7 | Segredo de sessão forte | `PWA_SESSION_SECRET` ≥ 32 caracteres, fora do Git | auditoria: `OK` |
@@ -41,7 +41,7 @@ O mesmo `.env` local serve ao desenvolvimento; em produção cada processo receb
 | `DATABASE_URL` | sim | role `stellspy_app.<ref>`, pooler sessão 5432, sujeita a RLS |
 | `PWA_SESSION_SECRET` | sim | ≥ 32 caracteres |
 | `PWA_COOKIE_SECURE` | sim | `1` em HTTPS |
-| `CORS_ALLOW_ORIGINS` | sim, se o PWA estiver em outra origem | lista exata |
+| `CORS_ALLOW_ORIGINS` | sim, se o PWA estiver em outra origem | lista exata; piloto local = `http://localhost:8080,http://127.0.0.1:8080` |
 | `EVIDENCIAS_STORAGE` | sim | `supabase` no piloto remoto |
 | `EVIDENCIAS_BUCKET` | com Storage | bucket privado `evidencias` |
 | `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` | com Storage | **somente servidor**; nunca no PWA |

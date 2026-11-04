@@ -74,7 +74,7 @@ def test_configuracao_completa_nao_bloqueia() -> None:
 
 def test_credencial_administrativa_na_api_bloqueia() -> None:
     itens = _com(
-        DATABASE_URL="postgresql+psycopg2://postgres.ref:s3cr3t-abc-123@pooler.supabase.com:5432/postgres"
+        DATABASE_URL="postgresql+psycopg2://postgres.ref:s3cr3t-abc-123@pooler.supabase.com:5432/postgres"  # credencial-de-exemplo
     )
     assert "BLOQUEADO" in _situacoes(itens, "DATABASE_URL")
 
@@ -102,7 +102,7 @@ def test_desligar_credencial_da_api_bloqueia() -> None:
 
 def test_dashboard_com_credencial_administrativa_bloqueia() -> None:
     itens = _com(
-        DASHBOARD_DATABASE_URL="postgresql+psycopg2://postgres.ref:x@pooler.supabase.com:5432/postgres"
+        DASHBOARD_DATABASE_URL="postgresql+psycopg2://postgres.ref:x@pooler.supabase.com:5432/postgres"  # credencial-de-exemplo
     )
     assert "BLOQUEADO" in _situacoes(itens, "DASHBOARD_DATABASE_URL")
 
@@ -142,7 +142,9 @@ def test_jwt_anon_apenas_avisa(tmp_path: pathlib.Path) -> None:
 
 
 def test_chave_privada_bloqueia(tmp_path: pathlib.Path) -> None:
-    itens = _varrer(tmp_path, "id.pem", "-----BEGIN RSA PRIVATE KEY-----\nMIIE...\n")
+    # Montada em runtime para o próprio arquivo de teste não parecer uma chave.
+    chave = "-----BEGIN RSA " + "PRIVATE KEY-----\nMIIE...\n"
+    itens = _varrer(tmp_path, "id.pem", chave)
     assert any(s == "BLOQUEADO" for _, s, _ in itens)
 
 
@@ -167,7 +169,7 @@ def test_senha_local_e_placeholder_nao_bloqueiam(tmp_path: pathlib.Path) -> None
 def test_fixture_marcada_como_exemplo_nao_bloqueia(tmp_path: pathlib.Path) -> None:
     """A marca é explícita e visível no diff; senha real sem marca continua bloqueando."""
     conteudo = (
-        "url = postgresql://postgres.ref:s3cr3t-abc-123@pooler.supabase.com:5432/x"
+        "url = postgresql://postgres.ref:s3cr3t-abc-123@pooler.supabase.com:5432/x"  # credencial-de-exemplo
         "  # credencial-de-exemplo\n"
     )
     itens = _varrer(tmp_path, "test_exemplo.py", conteudo)
@@ -194,6 +196,14 @@ def test_api_base_preenchido_no_index_avisa(tmp_path: pathlib.Path) -> None:
         tmp_path, "index.html", '{"apiBaseUrl": "http://localhost:8000"}'
     )
     assert any(s == "AVISO" and "apiBaseUrl" in d for _, s, d in itens)
+
+
+def test_repositorio_versionado_nao_tem_segredo_bloqueante() -> None:
+    """O próprio teste entra na varredura: fixture sintética precisa da marca."""
+    arquivos = auditoria._arquivos_git(auditoria.RAIZ_REPO)
+    itens = auditoria.auditar_arquivos(auditoria.RAIZ_REPO, arquivos)
+    bloqueios = [i for i in itens if i[1] == "BLOQUEADO"]
+    assert not bloqueios, bloqueios
 
 
 # ---------------------------------------------------------------------------

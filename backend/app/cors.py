@@ -15,6 +15,9 @@ from __future__ import annotations
 
 from urllib.parse import urlsplit
 
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+
 ESQUEMAS = frozenset({"http", "https"})
 
 
@@ -57,3 +60,23 @@ def origens_permitidas(valor: str | None) -> list[str]:
             saida.append(normalizada)
 
     return saida
+
+
+def configurar_cors(app: FastAPI, valor: str | None) -> list[str]:
+    """Aplica o middleware e devolve as origens efetivas; `ValueError` derruba o boot."""
+    origens = origens_permitidas(valor)
+    if origens:
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=origens,
+            allow_credentials=True,
+            # DELETE desfaz uma correlação de NF-e pelo PWA; sem ele o preflight
+            # recusa a chamada mesmo com a origem liberada.
+            allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
+            allow_headers=["Content-Type", "X-CSRF-Token", "X-API-KEY"],
+            # Respostas que o PWA lê fora do mesmo domínio: hash da foto, id do
+            # dossiê e nome do arquivo no download.
+            expose_headers=["X-Conteudo-Sha256", "X-Dossie-Id", "Content-Disposition"],
+            max_age=600,
+        )
+    return origens

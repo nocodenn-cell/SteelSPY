@@ -12,10 +12,10 @@ dados de homologação, exposição de credencial ou alteração em produção.
 
 Todas as cinco etapas foram implementadas e cobertas por testes automatizados.
 A suíte fechou em **570 testes de backend** (2 deselected) e **35 de PWA**. O
-piloto **não está liberado para GO** por três bloqueios que dependem de execução
+piloto **não está liberado para GO** por bloqueios que dependem de execução
 física ou de decisão do proprietário: câmera em aparelho real, ensaio de
-backup/restauração e configuração das origens de CORS/NF-e no ambiente de
-publicação. Nada foi publicado.
+backup/restauração e definição do ambiente de publicação (origem HTTPS e modo
+NF-e). Nada foi publicado.
 
 ---
 
@@ -104,7 +104,10 @@ Um único teste em banco real percorre os dez passos:
 
 - **CORS:** `app/cors.py` valida origens exatas no boot e derruba a aplicação
   com `*`, `null`, esquema inválido, caminho, query ou credencial embutida.
-  16 testes. `CORS_ALLOW_ORIGINS` vazio continua permitido (mesma origem).
+  O middleware libera `GET`, `POST`, `DELETE` e `OPTIONS`; 21 testes cobrem
+  validação, preflight com `X-CSRF-Token`, origem recusada e cabeçalhos do
+  dossiê. O piloto local ficou com `http://localhost:8080` e
+  `http://127.0.0.1:8080`; a publicação exige o domínio HTTPS real.
 - **Auditoria de segredos:** `backend/scripts/auditar_publicacao.py` varre
   arquivos versionados e o `.env`: JWT com `service_role`, chave PEM, URL de
   produção com senha, `.env` versionado, atribuições de segredo e variáveis
@@ -154,7 +157,8 @@ O detalhamento está em `RELATORIO_RISCOS.md`. Os que impedem o GO hoje:
 1. **R1/R2 — aparelho real:** câmera, permissões e rede móvel não exercitados;
    ADB ausente nesta máquina.
 2. **R3 — backup:** procedimento escrito, nenhum restore executado.
-3. **R4 — CORS:** origem exata do PWA ainda não definida.
+3. **R4 — CORS de publicação:** o piloto local já tem as duas origens exatas e
+   preflight testado; falta informar o domínio HTTPS real no deploy.
 4. **R5 — NF-e:** `NFE_IO_MOCK=1` no ambiente local.
 5. **R6 — dashboard:** `DASHBOARD_DATABASE_URL` e `DASHBOARD_TENANT_ID` não
    configurados onde o painel será publicado; a migration 31 ainda não foi

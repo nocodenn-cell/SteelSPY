@@ -72,7 +72,8 @@ foi executado.
 | Sprint 6 (2) | idempotência de recebimento e foto já coberta | `uq_recebimentos_id_cliente`, `uq_evidencias_idempotencia`, `(recebimento_id, sha256)`; retry testado no E2E |
 | Sprint 6 (3) | preparação de Android por ADB | `backend/scripts/preparar_android.py` + 9 testes; execução local: **ADB ausente (exit 2)** — nada aprovado |
 | Sprint 6 (4) | dez passos do piloto em teste único | `test_piloto_percorre_os_dez_passos_ate_a_consulta_autorizada`: auth → obra → pedido → NF-e → recebimento parcial → foto/hash → divergência → decisão → PDF → auditoria sem escrita |
-| Sprint 6 (5) | CORS com origens exatas e boot fail-fast | `app/cors.py` + 16 testes; `*`, `null`, caminho, query e credencial embutida são recusados |
+| Sprint 6 (5) | CORS com origens exatas e boot fail-fast | `app/cors.py` + 21 testes; `*`, `null`, caminho, query e credencial embutida são recusados |
+| Sprint 6 (5) | CORS do piloto fechado, inclusive escrita | `.env` local com `localhost`/`127.0.0.1:8080`; preflight de `POST` e `DELETE` liberado; smoke com `Origin` no app real; auditoria `OK` |
 | Sprint 6 (5) | auditoria de configuração e segredos | `scripts/auditar_publicacao.py`: `.env` local → **0 bloqueios, 5 avisos**; varredura do Git sem segredo real; 17 testes |
 | Sprint 6 (5) | runbook, backup e GO/NO-GO documentados | `docs/sprint6/CHECKLIST_PUBLICACAO.md`, `DEPLOY_HOMOLOGACAO.md`, `PROCEDIMENTO_BACKUP_RESTAURACAO.md`, `RELATORIO_RISCOS.md` |
 | Sprint 6 | suítes finais | backend **570 passed, 2 deselected** (180 s, 31 migrations); PWA **35 passed** (4 arquivos) |
@@ -88,8 +89,8 @@ foi executado.
 - Aplicar a migration 31 no projeto oficial com `STELLSPY_DASHBOARD_PASSWORD` e
   configurar `DASHBOARD_DATABASE_URL` + `DASHBOARD_TENANT_ID` onde o dashboard
   for publicado. A role da aplicação continua sem `BYPASSRLS`.
-- Definir `CORS_ALLOW_ORIGINS` com as origens exatas antes de qualquer deploy
-  (hoje vazio; a auditoria marca AVISO).
+- Definir `CORS_ALLOW_ORIGINS` de produção com a origem HTTPS exata do PWA (o
+  piloto local já usa `localhost`/`127.0.0.1:8080` e a auditoria marca `OK`).
 - Ensaiar backup e restauração em banco descartável
   (`docs/sprint6/PROCEDIMENTO_BACKUP_RESTAURACAO.md`) antes do GO.
 - Revisar os 5 avisos da auditoria de publicação (`NFE_IO_MOCK=1`, CORS vazio,

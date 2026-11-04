@@ -156,7 +156,9 @@ curl -s -X POST "$BASE/conferir" \
 
 - [ ] `SKIP_API_KEY=0` em qualquer ambiente real.
 - [x] `PWA_SESSION_SECRET` longo e aleatório (64 caracteres).
-- [ ] `CORS_ALLOW_ORIGINS` com origens exatas (vazio; definir antes do deploy).
+- [x] `CORS_ALLOW_ORIGINS` do piloto local:
+      `http://localhost:8080,http://127.0.0.1:8080`.
+- [ ] `CORS_ALLOW_ORIGINS` de produção com o domínio HTTPS exato do PWA (sem `*`).
 - [x] Role `stellspy_app`: `NOSUPERUSER`, `NOBYPASSRLS`, sem `CREATEROLE`.
 - [x] RLS habilitada e `FORCE` nas tabelas com `tenant_id` (20/20 + 20 políticas).
 - [ ] Role `stellspy_dashboard`: `NOBYPASSRLS`, sem escrita, `SELECT` em 5 tabelas

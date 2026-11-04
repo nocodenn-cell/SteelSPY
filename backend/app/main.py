@@ -6,12 +6,11 @@ import logging
 import os
 
 from fastapi import FastAPI, Request
-from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy.exc import InterfaceError, OperationalError
 from sqlalchemy.exc import TimeoutError as TimeoutDePool
 
-from app.cors import origens_permitidas
+from app.cors import configurar_cors
 from app.routers import auth_pwa, auth_usuario, conferencia, evidencias, pedidos
 
 logger = logging.getLogger(__name__)
@@ -19,24 +18,11 @@ logger = logging.getLogger(__name__)
 app = FastAPI(title="stellSPY Auditoria NF-e", version="0.1.0")
 
 try:
-    _origins = origens_permitidas(os.getenv("CORS_ALLOW_ORIGINS"))
+    configurar_cors(app, os.getenv("CORS_ALLOW_ORIGINS"))
 except ValueError as exc:
     # Falhar no boot é melhor que servir CORS ambíguo: o erro aparece no deploy,
     # não quando um navegador recusa a sessão em campo.
     raise RuntimeError(f"CORS_ALLOW_ORIGINS inválido: {exc}") from exc
-
-if _origins:
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=_origins,
-        allow_credentials=True,
-        allow_methods=["GET", "POST", "OPTIONS"],
-        allow_headers=["Content-Type", "X-CSRF-Token", "X-API-KEY"],
-        # Respostas que o PWA lê fora do mesmo domínio: hash da foto, id do
-        # dossiê e nome do arquivo no download.
-        expose_headers=["X-Conteudo-Sha256", "X-Dossie-Id", "Content-Disposition"],
-        max_age=600,
-    )
 
 app.include_router(auth_pwa.router)
 app.include_router(auth_usuario.router)
