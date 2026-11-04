@@ -121,9 +121,9 @@ foi executado.
 
 Sprint 6 (piloto operacional): `be28e00` dashboard com role de leitura presa ao
 tenant, `772d1ff` PWA com rascunho e estado por envio, `78c92fb` preparação
-Android por ADB, `5127fe8` teste dos dez passos e `70745e3` CORS/auditoria/
-documentos. Nenhum foi enviado ao remoto. Detalhe em
-`docs/sprint6/RELATORIO_SPRINT6.md` §8.
+Android por ADB, `5127fe8` teste dos dez passos, `70745e3` CORS/auditoria/
+documentos e `fd52e0a` CORS do piloto com `DELETE` e origens locais. Nenhum foi
+enviado ao remoto. Detalhe em `docs/sprint6/RELATORIO_SPRINT6.md` §8.
 (Atualizações de bookkeeping deste arquivo não contam.)
 
 ## Próxima ação automática

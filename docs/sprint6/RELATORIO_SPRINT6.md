@@ -147,6 +147,7 @@ Organizados por entrega; nenhum foi enviado ao remoto.
 | 3 | `78c92fb` | Preparação Android: script e testes |
 | 4 | `5127fe8` | Teste dos dez passos do piloto |
 | 5 | `70745e3` | CORS, auditoria de publicação, checklist/runbook/backup, PROGRESS e este relatório |
+| 5b | `fd52e0a` | Correção do CORS do piloto: `DELETE`, origens locais e testes de preflight no app real |
 
 ---
 
