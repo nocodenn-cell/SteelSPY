@@ -80,6 +80,7 @@ def equipe(sql_owner: Any, cenario: dict[str, Any]) -> dict[str, Any]:
     definicao = {
         "eng": ("engenheiro", cenario["tenant_a"], cenario["obra_a"]),
         "fiscal": ("fiscal", cenario["tenant_a"], cenario["obra_a"]),
+        "auditor": ("auditor", cenario["tenant_a"], cenario["obra_a"]),
         "admin_b": ("admin_tenant", cenario["tenant_b"], cenario["obra_b"]),
     }
     emails: dict[str, str] = {}
@@ -845,3 +846,173 @@ def test_fluxo_completo_de_recebimento_ponta_a_ponta(
     assert cliente.get(f"/evidencias/{evidencia['id']}").status_code == 404
     assert cliente.get(f"/evidencias/{evidencia['id']}/conteudo").status_code == 404
     assert cliente.get(f"/obras/{equipe['obra_a']}/recebimentos").status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# Sprint 6: os dez passos do piloto, em uma sessão de cada papel
+# ---------------------------------------------------------------------------
+
+
+def test_piloto_percorre_os_dez_passos_ate_a_consulta_autorizada(
+    cliente: Any, equipe: dict[str, Any], storage: Any, sql_owner: Any
+) -> None:
+    """
+    Roteiro físico do piloto traduzido em chamadas reais:
+
+    1. autenticação do funcionário;
+    2. seleção da obra autorizada, com as ações calculadas no servidor;
+    3. consulta ao pedido;
+    4. associação da NF-e ao pedido;
+    5. recebimento parcial no portão;
+    6. foto da carga, com prova de hash;
+    7. divergência entre o faturado e o contado;
+    8. conciliação e decisão do responsável técnico;
+    9. dossiê em PDF;
+    10. consulta pela auditoria, sem poder de escrita.
+
+    A divergência nasce onde nasce no campo: `nfe_itens` guarda a contagem do
+    portão (800 m recebidos contra 1000 m faturados) e a conciliação compara o
+    físico com a nota — não a nota consigo mesma.
+    """
+    # 1. Autenticação.
+    csrf_eng = _login(cliente, equipe["emails"]["eng"])
+    eu = cliente.get("/auth/eu")
+    assert eu.status_code == 200, eu.text
+    assert eu.json()["email"] == equipe["emails"]["eng"]
+    assert eu.json()["papel_global"] == "engenheiro"
+
+    # 2. Seleção da construtora/obra: só a obra com vínculo, com as ações do servidor.
+    obras = cliente.get("/auth/obras")
+    assert obras.status_code == 200, obras.text
+    obra_a = next(o for o in obras.json()["itens"] if o["id"] == str(equipe["obra_a"]))
+    assert obra_a["papel_na_obra"] == "engenheiro"
+    assert "gerenciar_pedido" in obra_a["acoes"]
+    assert "exportar_dossie" in obra_a["acoes"]
+
+    # 3-4. Pedido e vínculo com a NF-e do mesmo emitente.
+    cnpj = f"{uuid.uuid4().int % 10**14:014d}"
+    fornecedor = _criar_fornecedor(cliente, equipe["obra_a"], csrf_eng, cnpj=cnpj)
+    criado = _criar_pedido(cliente, equipe["obra_a"], csrf_eng, fornecedor, numero="PC-PILOTO")
+    assert criado.status_code == 201, criado.text
+    pedido = criado.json()
+    item_id = pedido["itens"][0]["id"]
+
+    consulta = cliente.get(f"/pedidos/{pedido['id']}")
+    assert consulta.status_code == 200, consulta.text
+    assert consulta.json()["numero"] == "PC-PILOTO"
+
+    nfe = _nfe_com_itens(
+        sql_owner, equipe,
+        [{"n_item": 1, "bitola_mm": 10.0, "quantidade": 1000.0, "unidade": "M", "marca": "GERDAU"}],
+        cnpj,
+    )
+    vinculo = _post(
+        cliente, f"/pedidos/{pedido['id']}/vincular-nfe", {"nfe_log_id": str(nfe)}, csrf_eng
+    )
+    assert vinculo.status_code == 200, vinculo.text
+    notas = cliente.get(f"/pedidos/{pedido['id']}/nfe")
+    assert notas.status_code == 200, notas.text
+    assert [n["id"] for n in notas.json()["itens"]] == [str(nfe)]
+
+    # 5. Recebimento no portão: 800 dos 1000 m chegaram.
+    cliente.cookies.clear()
+    csrf_fiscal = _login(cliente, equipe["emails"]["fiscal"])
+    entrega = _post(
+        cliente, f"/obras/{equipe['obra_a']}/recebimentos",
+        {
+            "id_cliente": str(uuid.uuid4()),
+            "pedido_id": pedido["id"],
+            "observacoes": "descarga conferida no portão do piloto",
+            "itens": [{"pedido_item_id": item_id, "quantidade": 800.0, "unidade": "M"}],
+        },
+        csrf_fiscal,
+    )
+    assert entrega.status_code == 200, entrega.text
+    rec = entrega.json()
+    assert rec["status"] == "parcial"
+    assert rec["pedido_status"]["status"] == "parcial"
+
+    # 6. Foto da carga: o hash devolvido é o mesmo do arquivo baixado.
+    buf = io.BytesIO()
+    Image.new("RGB", (48, 32), (3, 61, 3)).save(buf, format="PNG")
+    foto = buf.getvalue()
+    upload = cliente.post(
+        f"/obras/{equipe['obra_a']}/evidencias",
+        files={"arquivo": ("piloto.png", foto, "image/png")},
+        data={
+            "tipo": "material",
+            "origem": "camera",
+            "recebimento_id": rec["id"],
+            "idempotency_key": f"piloto-{uuid.uuid4().hex}",
+        },
+        headers={"X-CSRF-Token": csrf_fiscal},
+    )
+    assert upload.status_code == 201, upload.text
+    evidencia = upload.json()
+    download = cliente.get(f"/evidencias/{evidencia['id']}/conteudo")
+    assert download.status_code == 200, download.text
+    assert hashlib.sha256(download.content).hexdigest() == evidencia["sha256"]
+
+    # 7. A contagem do portão é o lado físico: 800 m recebidos contra 1000 m faturados.
+    with sql_owner.begin() as conn:
+        conn.execute(
+            text("""
+                INSERT INTO nfe_itens
+                    (tenant_id, nfe_log_id, item_numero, material_recebido, bitola_recebida,
+                     marca_recebida, quantidade_recebida, unidade_recebida, status_item)
+                VALUES (:t, :n, 1, 'VERGALHAO CA-50 10MM', 10.0, 'GERDAU', 800.0, 'M', 'VERMELHO')
+            """),
+            {"t": equipe["tenant_a"], "n": str(nfe)},
+        )
+
+    # 8. Conciliação e decisão do responsável técnico, com identidade registrada.
+    conc = _post(
+        cliente, f"/pedidos/{pedido['id']}/conciliar",
+        {"nfe_log_id": str(nfe), "recebimento_id": rec["id"]},
+        csrf_fiscal,
+    )
+    assert conc.status_code == 201, conc.text
+    corpo_conc = conc.json()
+    assert corpo_conc["resultado"]["fonte_verdade_fisica"] == "recebimento"
+    assert corpo_conc["severidade_tecnica"] == "VERMELHO"
+
+    cliente.cookies.clear()
+    csrf_eng = _login(cliente, equipe["emails"]["eng"])
+    decisao = _post(
+        cliente, f"/conciliacoes/{corpo_conc['id']}/decisao",
+        {
+            "decisao": "aceita",
+            "justificativa": "falta de 200 m apontada para cobrança do fornecedor",
+        },
+        csrf_eng,
+    )
+    assert decisao.status_code == 200, decisao.text
+    assert decisao.json()["decisao"]["usuario_email"] == equipe["emails"]["eng"]
+
+    # 9. Dossiê PDF com identificador estável e sem cache.
+    pdf = cliente.get(f"/pedidos/{pedido['id']}/dossie.pdf")
+    assert pdf.status_code == 200, pdf.text
+    assert pdf.content[:4] == b"%PDF"
+    assert pdf.headers["x-dossie-id"] == f"dossie-{pedido['id']}"
+    assert "no-store" in pdf.headers["cache-control"]
+
+    # 10. Auditoria autorizada: lê pedido, recebimento e dossiê — não escreve.
+    cliente.cookies.clear()
+    csrf_auditor = _login(cliente, equipe["emails"]["auditor"])
+    assert cliente.get("/auth/eu").json()["papel_global"] == "auditor"
+    for url in (
+        f"/pedidos/{pedido['id']}",
+        f"/recebimentos/{rec['id']}",
+        f"/pedidos/{pedido['id']}/dossie",
+        f"/pedidos/{pedido['id']}/dossie.pdf",
+        f"/obras/{equipe['obra_a']}/recebimentos",
+    ):
+        assert cliente.get(url).status_code == 200, f"auditor sem leitura em {url}"
+
+    assert _post(
+        cliente, f"/pedidos/{pedido['id']}/conciliar", {"nfe_log_id": str(nfe)}, csrf_auditor
+    ).status_code == 403
+    assert _post(
+        cliente, f"/conciliacoes/{corpo_conc['id']}/decisao",
+        {"decisao": "rejeitada", "justificativa": "auditoria não decide"}, csrf_auditor,
+    ).status_code == 403
