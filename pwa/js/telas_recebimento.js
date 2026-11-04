@@ -49,6 +49,58 @@ const TIPOS_EVIDENCIA = [
 
 const CAMPO = "w-full p-4 mb-3 border-4 border-black rounded-lg text-base font-bold";
 
+// Rascunho da entrada em aberto: o id do dispositivo é o que o servidor usa
+// para não duplicar. Perdê-lo num reload transformaria "tentar de novo" em uma
+// segunda carga — por isso ele sobrevive na sessão do navegador até a resposta.
+const CHAVE_RASCUNHO = "stellspy.recebimento_em_aberto";
+const _UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function _lerRascunho(obraId) {
+  try {
+    const bruto = sessionStorage.getItem(`${CHAVE_RASCUNHO}:${obraId}`);
+    return bruto && _UUID.test(bruto) ? bruto : null;
+  } catch {
+    return null; // aba privada: sem rascunho, a próxima tentativa cria um id novo.
+  }
+}
+
+function _guardarRascunho(obraId, id) {
+  try {
+    sessionStorage.setItem(`${CHAVE_RASCUNHO}:${obraId}`, id);
+  } catch {
+    /* sem storage: o id vive só enquanto a tela estiver aberta. */
+  }
+}
+
+function _limparRascunho(obraId) {
+  try {
+    sessionStorage.removeItem(`${CHAVE_RASCUNHO}:${obraId}`);
+  } catch {
+    /* nada a limpar. */
+  }
+}
+
+/**
+ * Chave de idempotência por arquivo, estável dentro da tela.
+ *
+ * A foto pode falhar no meio do envio e a pessoa tocar no botão outra vez. Sem
+ * chave estável, o servidor veria uma operação nova; com ela, o reenvio devolve
+ * a evidência já gravada. O mapa é por tela (por recebimento), para que a mesma
+ * imagem usada em outra entrega receba outra chave — ali é reutilização, não retry.
+ */
+export function criarChavesDeEnvio() {
+  const porArquivo = new Map();
+  return (arquivo) => {
+    const id = [arquivo.name || "foto", arquivo.size || 0, arquivo.lastModified || 0].join("|");
+    let chave = porArquivo.get(id);
+    if (!chave) {
+      chave = uuid4();
+      porArquivo.set(id, chave);
+    }
+    return chave;
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Registrar recebimento
 // ---------------------------------------------------------------------------
@@ -58,14 +110,16 @@ export function telaRecebimento(base) {
   // Cobertura por pedido, guardada para a tela de resultado conseguir dizer
   // "L1 · CA-50" em vez de um UUID que ninguém lê com luva.
   const coberturas = {};
-  montarFormulario();
+  montarFormulario({ reaproveitarRascunho: true });
   return tela;
 
-  function montarFormulario() {
+  function montarFormulario({ reaproveitarRascunho = false } = {}) {
     const obra = obraDaTela();
-    // Uma chave por abertura de tela. Reenviar depois de falha de rede é tratado
-    // como retry pelo servidor, não como segunda carga.
-    const idCliente = uuid4();
+    // A chave da operação sobrevive a um reload da tela: se a resposta se perdeu,
+    // a nova tentativa reencontra o mesmo registro em vez de criar uma segunda
+    // entrada para a mesma carga. "Registrar outra entrada" cria chave nova.
+    const idCliente = (reaproveitarRascunho && _lerRascunho(obra.id)) || uuid4();
+    _guardarRascunho(obra.id, idCliente);
 
     const tipo = el("select", { class: CAMPO },
       ...TIPO_TIPOS.map(([valor, rotulo]) => el("option", { value: valor }, rotulo)));
@@ -165,6 +219,9 @@ export function telaRecebimento(base) {
               itens,
             }, csrf()),
           );
+          // Resposta recebida = o servidor tem o registro. A chave pode ser
+          // descartada; a próxima entrada (se houver) nasce com outra.
+          _limparRascunho(obra.id);
           if (!dados.criado) {
             // Retry de uma entrega que já entrou: o servidor tem o estado real.
             const detalhe = await tentar(base, () => obterRecebimento(base, dados.id, csrf()));
@@ -257,7 +314,7 @@ export function telaRecebimento(base) {
     acoes.push(el("button", {
       type: "button",
       class: "touch-btn w-full bg-slate-900 text-white font-black rounded-xl border-4 border-black",
-      onclick: montarFormulario,
+      onclick: () => montarFormulario(),
     }, "REGISTRAR OUTRA ENTRADA"));
 
     const pedidoStatus = dados.pedido_status
@@ -297,6 +354,10 @@ const TIPO_TIPOS = [
 
 export function telaFotos(base, recebimentoId) {
   const obra = obraDaTela();
+  // Ler a foto e subir foto são ações diferentes. A tela abre para quem só lê
+  // (auditoria); só os controles de envio dependem de `anexar_evidencia`.
+  const podeEnviar = pode("anexar_evidencia");
+  const chaveDeEnvio = criarChavesDeEnvio();
   const lista = el("div", {}, carregando());
   const estadoEntrega = el("div", {});
 
@@ -355,7 +416,7 @@ export function telaFotos(base, recebimentoId) {
               origem,
               recebimentoId,
               capturadaEm: new Date().toISOString(),
-              chaveIdempotencia: uuid4(),
+              chaveIdempotencia: chaveDeEnvio(arquivo),
             },
             csrf(),
           ),
@@ -421,21 +482,30 @@ export function telaFotos(base, recebimentoId) {
     "div",
     {},
     estadoEntrega,
-    cartao(
-      titulo("Fotos da carga", "Escolha o que a foto mostra antes de enviar."),
-      el("label", { class: "block text-sm font-bold mb-1" }, "A foto é de quê?"),
-      seletorTipo,
-      avisos,
-      btnCamera,
-      btnGaleria,
-      camera,
-      galeria,
-      el(
-        "p",
-        { class: "text-xs font-bold text-gray-700" },
-        "O servidor guarda o arquivo original e uma versão sem dados ocultos da câmera. Os dois ficam com você.",
-      ),
-    ),
+    podeEnviar
+      ? cartao(
+          titulo("Fotos da carga", "Escolha o que a foto mostra antes de enviar."),
+          el("label", { class: "block text-sm font-bold mb-1" }, "A foto é de quê?"),
+          seletorTipo,
+          avisos,
+          btnCamera,
+          btnGaleria,
+          camera,
+          galeria,
+          el(
+            "p",
+            { class: "text-xs font-bold text-gray-700" },
+            "O servidor guarda o arquivo original e uma versão sem dados ocultos da câmera. Os dois ficam com você.",
+          ),
+        )
+      : cartao(
+          titulo("Fotos da carga", "Seu papel nesta obra é de leitura."),
+          el(
+            "p",
+            { class: "text-sm font-bold text-gray-700" },
+            "Você vê e baixa as fotos, mas quem registra a carga no portão é quem tem a ação de anexar evidência.",
+          ),
+        ),
     cartao(el("h3", { class: "text-base font-black uppercase mb-2" }, "O que já subiu"), lista),
     pode("ver_recebimento")
       ? el(

@@ -15,8 +15,6 @@
  * para ler em campo, sem SQL nem host.
  */
 
-const JSON_HEADERS = { "Content-Type": "application/json" };
-
 export class ErroApi extends Error {
   constructor(status, detail, payload) {
     super(detail || `HTTP ${status}`);
@@ -52,7 +50,7 @@ async function _ler(resposta) {
 /**
  * @param {string} base
  * @param {string} caminho  começa com "/"
- * @param {{method?: string, corpo?: any, csrf?: string|null, formulario?: FormData, consulta?: object, aceito?: string}} [opcoes]
+ * @param {{method?: string, corpo?: any, csrf?: string|null, formulario?: FormData, consulta?: object, aceito?: string, cabecalhos?: object}} [opcoes]
  */
 export async function chamar(base, caminho, opcoes = {}) {
   const metodo = (opcoes.method || "GET").toUpperCase();
@@ -63,7 +61,7 @@ export async function chamar(base, caminho, opcoes = {}) {
     }
   }
 
-  const headers = {};
+  const headers = { ...(opcoes.cabecalhos || {}) };
   if (opcoes.aceito) headers.Accept = opcoes.aceito;
 
   let corpo = undefined;
@@ -78,12 +76,24 @@ export async function chamar(base, caminho, opcoes = {}) {
     headers["X-CSRF-Token"] = opcoes.csrf;
   }
 
-  const resposta = await fetch(url.toString(), {
-    method: metodo,
-    headers: Object.keys(headers).length ? headers : undefined,
-    credentials: "include",
-    body: corpo,
-  });
+  let resposta;
+  try {
+    resposta = await fetch(url.toString(), {
+      method: metodo,
+      headers: Object.keys(headers).length ? headers : undefined,
+      credentials: "include",
+      body: corpo,
+    });
+  } catch {
+    // `fetch` rejeita sem resposta: a requisição pode ter chegado ou não. Quem
+    // reenvia usa a mesma chave de idempotência, então repetir é seguro; mentir
+    // "não enviou" faria a pessoa registrar a carga duas vezes por outro caminho.
+    throw new ErroApi(
+      0,
+      "Sem conexão com o servidor. A operação não foi confirmada — tente de novo quando o sinal voltar.",
+      null,
+    );
+  }
 
   if (opcoes.aceito === "application/pdf") {
     if (!resposta.ok) {
@@ -265,27 +275,23 @@ export function enviarEvidencia(
 // O que já existia: conferência por chave de acesso
 // ---------------------------------------------------------------------------
 
-export async function conferirNfe(base, obraId, chaveAcesso, opts = {}) {
-  const headers = { ...JSON_HEADERS };
-  if (opts.apiKey) headers["X-API-KEY"] = String(opts.apiKey).trim();
-  const resposta = await fetch(`${base}/conferir`, {
+/**
+ * Conferência por chave de acesso.
+ *
+ * Passa pelo mesmo cliente das outras chamadas porque `/conferir` com sessão de
+ * usuário exige CSRF e responde 401 quando a sessão morreu — as duas coisas que
+ * a chamada direta a `fetch` ignorava, deixando a tela presa em "não conectou".
+ * `apiKey` continua aceito para o fluxo legado por obra.
+ */
+export function conferirNfe(base, obraId, chaveAcesso, opts = {}) {
+  const cabecalhos = {};
+  if (opts.apiKey) cabecalhos["X-API-KEY"] = String(opts.apiKey).trim();
+  return chamar(base, "/conferir", {
     method: "POST",
-    headers,
-    credentials: "include",
-    body: JSON.stringify({ obra_id: obraId, chave_acesso: chaveAcesso }),
+    corpo: { obra_id: obraId, chave_acesso: chaveAcesso },
+    csrf: opts.csrf,
+    cabecalhos,
   });
-  const texto = await resposta.text();
-  let data;
-  try {
-    data = JSON.parse(texto);
-  } catch {
-    throw new Error(texto.slice(0, 200) || "Resposta inválida do servidor");
-  }
-  if (!resposta.ok) {
-    const det = data.detail;
-    throw new Error(typeof det === "string" ? det : JSON.stringify(det || data));
-  }
-  return data;
 }
 
 export async function pwaLogin(base, obraId, apiKey) {

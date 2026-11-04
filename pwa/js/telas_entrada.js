@@ -279,7 +279,7 @@ function _menu(base) {
     { rota: "historico", acao: "ver_recebimento", titulo: "Histórico de recebimentos", texto: "O que já entrou nesta obra." },
     { rota: "pedidos", acao: "gerenciar_pedido", titulo: "Pedidos de compra", texto: "O que foi comprado e com qual fornecedor." },
     { rota: "nfe", acao: "ver_recebimento", titulo: "Notas fiscais (NF-e)", texto: "Buscar nota pelo código ou chave." },
-    { rota: "conferir", acao: "ver_recebimento", titulo: "Conferir NF-e pela chave", texto: "Modo rápido: digite os 44 dígitos." },
+    { rota: "conferir", acao: "criar_recebimento", titulo: "Conferir NF-e pela chave", texto: "Modo rápido: digite os 44 dígitos." },
     { rota: "dossies", acao: "exportar_dossie", titulo: "Dossiê", texto: "Prova completa de um pedido, em PDF." },
   ];
 
@@ -394,7 +394,11 @@ export function telaConferir(base) {
     protegerEnvio(botao, async () => {
       botao.textContent = "PROCESSANDO…";
       try {
-        const dados = await conferirNfe(base, obra.id, digits);
+        // `/conferir` com sessão de usuário exige CSRF e pode responder 401;
+        // por isso a chamada passa por `tentar`, que devolve a pessoa ao login.
+        const dados = await tentar(base, () =>
+          conferirNfe(base, obra.id, digits, { csrf: csrf() }),
+        );
         renderizarResultado(dados, base, resultado);
         mostrarToast(`Resultado: ${dados.status}`, dados.status === "VERDE" ? "sucesso" : "erro");
       } catch (e) {

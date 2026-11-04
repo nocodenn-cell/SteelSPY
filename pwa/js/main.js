@@ -40,15 +40,21 @@ function base() {
  */
 const ACAO_POR_ROTA = {
   pedidos: "gerenciar_pedido",
-  pedido: "gerenciar_pedido",
+  // Detalhe do pedido é leitura no portão: mostra saldo e trilha para quem conta
+  // a carga. Criar e alterar continuam escondidos pelas ações dentro da tela.
+  pedido: "ver_recebimento",
   divergencias: "ver_recebimento",
   nfe: "ver_recebimento",
   recebimento: "criar_recebimento",
-  fotos: "anexar_evidencia",
+  // Ver foto e subir foto são permissões diferentes. Quem só lê (auditoria)
+  // precisa abrir a tela; o botão de enviar é que fica escondido.
+  fotos: "ver_evidencia",
   historico: "ver_recebimento",
   dossies: "ver_recebimento",
   dossie: "exportar_dossie",
-  conferir: "ver_recebimento",
+  // O endpoint `/conferir` exige `criar_recebimento`; a rota precisa da mesma
+  // ação, senão a tela abre para quem só pode ler e falha no primeiro envio.
+  conferir: "criar_recebimento",
 };
 
 function montar(rota, params) {
@@ -135,7 +141,7 @@ function tratarOffline() {
     tela.prepend(el(
       "div",
       { class: "p-3 mb-4 bg-amber-100 border-4 border-amber-600 rounded-xl text-sm font-black", role: "alert" },
-      "Sem rede agora. Nada foi enviado — nada foi marcado como concluído.",
+      "Sem rede agora. Nada será marcado como concluído sem a confirmação do servidor.",
     ));
   });
 }
