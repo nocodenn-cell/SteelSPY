@@ -118,10 +118,11 @@ foi executado.
 
 ## Último commit de entrega
 
-Sprint 6 (piloto operacional): os commits desta entrega estão organizados em
-`docs/sprint6/RELATORIO_SPRINT6.md` §8 (dashboard de menor privilégio, PWA
-resiliente, preparação Android, teste dos dez passos, CORS/auditoria/documentos).
-Nenhum foi enviado ao remoto. Detalhe em `docs/sprint6/RELATORIO_SPRINT6.md`.
+Sprint 6 (piloto operacional): `be28e00` dashboard com role de leitura presa ao
+tenant, `772d1ff` PWA com rascunho e estado por envio, `78c92fb` preparação
+Android por ADB, `5127fe8` teste dos dez passos e `70745e3` CORS/auditoria/
+documentos. Nenhum foi enviado ao remoto. Detalhe em
+`docs/sprint6/RELATORIO_SPRINT6.md` §8.
 (Atualizações de bookkeeping deste arquivo não contam.)
 
 ## Próxima ação automática

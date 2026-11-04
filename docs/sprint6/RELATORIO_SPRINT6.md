@@ -137,13 +137,13 @@ Supabase local e não fazem parte do gate padrão.
 
 Organizados por entrega; nenhum foi enviado ao remoto.
 
-| Grupo | Conteúdo |
-|-------|----------|
-| 1 | Dashboard de menor privilégio: migration 31, runner, dashboard, testes de isolamento, docs |
-| 2 | PWA resiliente: rascunho, estados de operação, tela de recebimento, Vitest, roteiro |
-| 3 | Preparação Android: script e testes |
-| 4 | Teste dos dez passos do piloto |
-| 5 | CORS, auditoria de publicação, checklist/runbook/backup, PROGRESS e este relatório |
+| Grupo | Commit | Conteúdo |
+|-------|--------|----------|
+| 1 | `be28e00` | Dashboard de menor privilégio: migration 31, runner, dashboard, testes de isolamento, docs |
+| 2 | `772d1ff` | PWA resiliente: rascunho, estados de operação, tela de recebimento, Vitest, roteiro |
+| 3 | `78c92fb` | Preparação Android: script e testes |
+| 4 | `5127fe8` | Teste dos dez passos do piloto |
+| 5 | `70745e3` | CORS, auditoria de publicação, checklist/runbook/backup, PROGRESS e este relatório |
 
 ---
 
