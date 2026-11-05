@@ -152,7 +152,7 @@ PWA com rascunho/estado, preparação Android, teste dos dez passos, CORS/audito
 e correção do CORS local. A auditoria pós-push de 2026-11-05 gera um commit
 **locais** `6bf1c01` (correção de autenticação do dashboard, scanner de
 histórico, testes e documentos) e `5b68c85` (marcação da fixture); eles **não
-foram enviados** ao remoto. Um novo commit local registra a **migration 31
+foram enviados** ao remoto. O commit local `be4c1c8` registra a **migration 31
 aplicada**, o dashboard configurado, a correção do validador de URL do pooler e
 a atualização dos documentos; também **não foi enviado**. Detalhe em
 `docs/sprint6/RELATORIO_AUDITORIA_POS_PUSH.md` §10.

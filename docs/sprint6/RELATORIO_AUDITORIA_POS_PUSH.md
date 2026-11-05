@@ -340,8 +340,9 @@ c2cdfd2 docs(progress): registra correcao do CORS do piloto
 
 - `6bf1c01` — `fix(dashboard): exige senha no painel e audita o historico publicado`
 - `5b68c85` — `test(publicacao): marca fixture do scanner como exemplo sintetico`
+- `be4c1c8` — `feat(dashboard): aplica a migration 31 e valida a role de leitura`
 
-O remoto permanece em `c2cdfd2`; estes dois commits estão apenas no worktree
+O remoto permanece em `c2cdfd2`; estes três commits estão apenas no worktree
 local. Nenhum `git push` foi executado.
 
 ---
