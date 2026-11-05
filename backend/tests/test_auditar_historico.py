@@ -119,7 +119,7 @@ def test_atribuicao_de_segredo_em_codigo_bloqueia(tmp_path, capsys):
 
 def test_fixture_sintetica_em_teste_nao_bloqueia(tmp_path, capsys):
     repo = _repo(tmp_path)
-    url = "postgresql://postgres.ref:s3cr3t@aws-0-sa-east-1.pooler.supabase.com:5432/postgres"
+    url = "postgresql://postgres.ref:s3cr3t@aws-0-sa-east-1.pooler.supabase.com:5432/postgres"  # credencial-de-exemplo
     _comitar(repo, "tests/test_exemplo.py", f'URL = "{url}"\n')
 
     codigo, saida = _rodar(capsys, repo)
