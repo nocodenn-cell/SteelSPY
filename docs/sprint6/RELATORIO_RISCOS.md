@@ -19,7 +19,7 @@ Legenda de impacto: **A** = bloqueia o piloto; **B** = degrada a operação;
 | R3 | Backup/restauração não ensaiados | média | A | Procedimento escrito; **nenhum dump/restore executado** | Ensaio em banco descartável antes do GO |
 | R4 | `CORS_ALLOW_ORIGINS` de produção ainda não definido | média | A na publicação | **Piloto local fechado:** `localhost` e `127.0.0.1:8080`, preflight de `POST`/`DELETE` e 21 testes; a API recusa config ambígua no boot | Informar a origem HTTPS exata no ambiente publicado |
 | R5 | `NFE_IO_MOCK=1` no ambiente local | alta | A se usado no piloto | Auditoria: AVISO | `NFE_IO_MOCK=0` e token real, ou fluxo manual de NF-e explicitamente aceito |
-| R6 | Dashboard sem credencial de banco **ou sem senha de entrada** | média | B (A se exposto) | **Configurado em 2026-11-05:** role `stellspy_dashboard` com LOGIN por senha dedicada, `DASHBOARD_DATABASE_URL` e `DASHBOARD_TENANT_ID` (HML Alfa), senha de entrada de 32 chars; painel sobe e autentica headless. No HEAD `c2cdfd2`, `DASHBOARD_PASSWORD` vazia fazia o painel abrir sem login; **correção local** exige ≥ 12 | Publicar a correção antes de expor o painel; trocar o tenant provisório ao cadastrar a construtora do piloto |
+| R6 | Dashboard sem credencial de banco **ou sem senha de entrada** | baixa | B (A se exposto) | **Fechado em 2026-11-05:** correção publicada em `0f5579b` (senha obrigatória ≥ 12); role `stellspy_dashboard` com LOGIN por senha dedicada, `DASHBOARD_DATABASE_URL` e `DASHBOARD_TENANT_ID` (HML Alfa); painel sobe e autentica headless | Trocar o tenant provisório ao cadastrar a construtora do piloto; senha compartilhada não é MFA |
 
 Qualquer R1–R6 aberto no momento da publicação é **NO-GO** conforme
 `CHECKLIST_PUBLICACAO.md`.

@@ -5,14 +5,16 @@
 ## Fase atual
 
 **FASE C — Sprint 6: branch publicada, auditoria pós-push e dashboard operacional.**
-A `feat/sprint3-operacional` está no GitHub com HEAD `c2cdfd2` (33 commits).
-A auditoria do histórico completo encontrou **0 segredos reais** (71 commits,
-39 fixtures sintéticas revisadas) e a branch está íntegra (`fsck` limpo, HEAD =
+A `feat/sprint3-operacional` está no GitHub com a correção de autenticação do
+dashboard publicada em `0f5579b` (38 commits na entrega).
+A auditoria do histórico completo encontrou **0 segredos reais** (76 commits,
+46 fixtures sintéticas revisadas) e a branch está íntegra (`fsck` limpo, HEAD =
 remoto). A suíte fechou em **593 testes de backend** (406 unitários + 187 de
 integração, 2 skips de Storage local) e **35 de PWA**. Foi encontrada uma lacuna
 real de autenticação no dashboard: sem `DASHBOARD_PASSWORD` ele abria sem login.
-A correção local torna a senha obrigatória (≥ 12) e adiciona 6 testes; **ainda
-não foi publicada**. A **migration 31 foi aplicada no projeto oficial** (31/31) e
+A correção torna a senha obrigatória (≥ 12), adiciona 6 testes e **foi
+publicada** junto com a auditoria. A **migration 31 foi aplicada no projeto
+oficial** (31/31) e
 o dashboard foi configurado com a role `stellspy_dashboard`: login por senha
 dedicada, SELECT em 5 tabelas, `NOBYPASSRLS`, e isolamento Alfa/Beta provado
 contra o banco remoto. O painel sobe e autentica headless (Streamlit AppTest),
@@ -20,8 +22,8 @@ mostrando apenas a obra do tenant configurado. O tenant em uso é o **HML Alfa**
 provisório até o cadastro da construtora do piloto. O plano de deploy gratuito
 (Render Free + Supabase Free, same-origin, HTTPS) está documentado, mas **nada
 foi publicado**. O piloto real permanece **NO-GO** por validação física, backup,
-publicação da correção de autenticação e decisão de NF-e/dados. Nenhum deploy ou
-push foi executado.
+host do dashboard e decisão de NF-e/dados. Nenhum deploy foi executado; o push
+de 2026-11-05 publicou a correção e a auditoria.
 
 ## Concluído
 
@@ -86,7 +88,7 @@ push foi executado.
 | Sprint 6 | suítes finais | backend **570 passed, 2 deselected** (180 s, 31 migrations); PWA **35 passed** (4 arquivos) |
 | Pós-push (2026-11-05) | branch publicada e íntegra | `origin/feat/sprint3-operacional` = `c2cdfd2`; 33 commits em `bce0155..c2cdfd2`; `git fsck --full` exit 0 |
 | Pós-push (2026-11-05) | histórico sem segredo real | `scripts/auditar_historico.py`: **0 bloqueios** nos 33 commits e em 71 do histórico; 31/39 sintéticos revisados; 8 testes do scanner |
-| Pós-push (2026-11-05) | dashboard falha fechado sem senha | `dashboard/auth.py`: `DASHBOARD_PASSWORD` obrigatória (≥ 12), comparação em tempo constante; 6 testes; **correção local, não publicada** |
+| Pós-push (2026-11-05) | dashboard falha fechado sem senha | `dashboard/auth.py`: `DASHBOARD_PASSWORD` obrigatória (≥ 12), comparação em tempo constante; 6 testes; **publicada em `0f5579b`** |
 | Pós-push (2026-11-05) | CORS confirmado | 21 testes; `*`, `null`, caminho, query, credencial embutida e porta inválida recusados; same-origin dispensa CORS |
 | Pós-push (2026-11-05) | suítes completas | backend **592 passed** (405 + 187 integração), 1 skip de Storage local; PWA **35 passed** |
 | Pós-push (2026-11-05) | plano de deploy gratuito | `docs/sprint6/PLANO_DEPLOY_GRATUITO.md`: Render Free same-origin + Supabase Free, HTTPS, R$ 0,00; **nada executado** |
@@ -97,6 +99,7 @@ push foi executado.
 | Dashboard (2026-11-05) | painel sobe e autentica headless | `DASHBOARD_PASSWORD` (32 chars) aceita; Streamlit AppTest sem exceção, gate de senha e título "Economia & conformidade"; KPI vazio porque não há NF-e no período |
 | Dashboard (2026-11-05) | auditoria de publicação sem bloqueio | falha fechada corrigida para aceitar `stellspy_dashboard.<ref>` do pooler; **0 bloqueios, 3 avisos**; 52 testes focados verdes |
 | Dashboard (2026-11-05) | suíte completa após a migration 31 | backend **593 passed, 2 skipped** (406 unitários + 187 integração; 31 migrations no banco local); container `stellspy-pg` devolvido ao estado parado |
+| Publicação (2026-11-05) | correção de autenticação e auditoria publicadas | push `c2cdfd2..0f5579b` (5 commits); `origin/feat/sprint3-operacional` = `0f5579b`; **0 segredos** em 76 commits |
 
 ## Pendente
 
@@ -109,8 +112,6 @@ push foi executado.
 - Trocar o tenant provisório do dashboard: `DASHBOARD_TENANT_ID` aponta hoje
   para a `HML Construtora Alfa`; ao cadastrar a construtora do piloto, atualizar
   a variável (a role não muda) e revalidar com `dashboard.diagnostico`.
-- Publicar a correção local de autenticação do dashboard: no HEAD `c2cdfd2`,
-  `DASHBOARD_PASSWORD` vazia fazia o painel abrir sem login.
 - Definir `CORS_ALLOW_ORIGINS` de produção **apenas se** o PWA ficar em outra
   origem; no deploy same-origin planejado, a lista fica vazia (21 testes).
 - Executar o deploy gratuito de `docs/sprint6/PLANO_DEPLOY_GRATUITO.md` somente
@@ -138,7 +139,7 @@ push foi executado.
 | Deploy | fora de escopo por instrução; branch publicada, mas nada foi publicado em ambiente |
 | PWA em aparelho real | câmera e fluxo de campo não exercitados; ADB ausente nesta máquina |
 | Backup | procedimento escrito, nenhum dump/restore executado antes do GO |
-| Dashboard | role e painel configurados e validados no banco oficial; falta publicar a correção de autenticação e apontar `DASHBOARD_TENANT_ID` para a construtora real |
+| Dashboard | role, autenticação e painel configurados e validados no banco oficial; falta apontar `DASHBOARD_TENANT_ID` para a construtora real e definir o host |
 | Publicação | `CORS_ALLOW_ORIGINS` de produção (se PWA separado), host do dashboard e `NFE_IO_MOCK=0` ainda não definidos |
 | Piloto real | validação física, backup, ambiente do dashboard e decisão de NF-e/dados abertos — **NO-GO** |
 | VC-01 em campo | fotografias do cenário real de recebimento e GPU (RTX 4070 não presente nesta máquina) |
@@ -147,31 +148,27 @@ push foi executado.
 ## Último commit de entrega
 
 A branch `feat/sprint3-operacional` foi publicada em 2026-11-04 com **33
-commits** (`bce0155..c2cdfd2`), HEAD `c2cdfd2` — dashboard com role de leitura,
-PWA com rascunho/estado, preparação Android, teste dos dez passos, CORS/auditoria
-e correção do CORS local. A auditoria pós-push de 2026-11-05 gera um commit
-**locais** `6bf1c01` (correção de autenticação do dashboard, scanner de
-histórico, testes e documentos) e `5b68c85` (marcação da fixture); eles **não
-foram enviados** ao remoto. O commit local `be4c1c8` registra a **migration 31
-aplicada**, o dashboard configurado, a correção do validador de URL do pooler e
-a atualização dos documentos; também **não foi enviado**. Detalhe em
+commits** (`bce0155..c2cdfd2`). Em 2026-11-05, o push `c2cdfd2..0f5579b`
+publicou mais **5 commits**: `6bf1c01` (correção de autenticação do dashboard,
+scanner de histórico, testes e documentos), `5b68c85` (marcação da fixture),
+`5bc7d15` (hashes da auditoria), `be4c1c8` (migration 31 aplicada, dashboard
+configurado e validador de URL do pooler) e `0f5579b` (bookkeeping). HEAD
+publicado: `0f5579b`. Detalhe em
 `docs/sprint6/RELATORIO_AUDITORIA_POS_PUSH.md` §10.
 
 ## Próxima ação automática
 
-1. Autorizar a publicação do commit local da auditoria (dashboard fail-closed,
-   scanner de histórico, testes e documentos). Nada foi enviado.
-2. Ensaiar backup/restauração em banco descartável antes do GO.
-3. Instalar ADB e executar o roteiro manual em celular real, anexando capturas —
+1. Ensaiar backup/restauração em banco descartável antes do GO.
+2. Instalar ADB e executar o roteiro manual em celular real, anexando capturas —
    câmera e retry com queda de rede são os pontos que nenhum teste automatizado
    cobre. Android: `adb reverse` + `http://localhost:8080`; iPhone: HTTPS.
-4. Definir o modo NF-e (`NFE_IO_MOCK=0` com token ou fluxo manual aceito) e
+3. Definir o modo NF-e (`NFE_IO_MOCK=0` com token ou fluxo manual aceito) e
    decidir o destino dos dados HML sintéticos.
-5. Ao cadastrar a construtora do piloto, atualizar `DASHBOARD_TENANT_ID` (hoje
+4. Ao cadastrar a construtora do piloto, atualizar `DASHBOARD_TENANT_ID` (hoje
    `HML Construtora Alfa`) e revalidar com `dashboard.diagnostico`.
-6. Autorizar e executar o deploy de `docs/sprint6/PLANO_DEPLOY_GRATUITO.md`;
+5. Autorizar e executar o deploy de `docs/sprint6/PLANO_DEPLOY_GRATUITO.md`;
    smoke test com dados sintéticos.
-7. Sprint 5: coletar e anonimizar fotografias reais; nenhum modelo entra no
+6. Sprint 5: coletar e anonimizar fotografias reais; nenhum modelo entra no
    produto sem os portões de `exp_vc02`.
 
 Nenhuma operação destrutiva, push ou deploy é autorizada sem pedido explícito.

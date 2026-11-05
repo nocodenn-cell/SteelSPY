@@ -2,12 +2,14 @@
 
 **Data:** 2026-11-05
 **Branch auditada:** `feat/sprint3-operacional`
-**HEAD publicado:** `c2cdfd266e8db61d19de343ac46cda7e7cf0618e`
+**Correção publicada em:** `0f5579b` (autenticação do dashboard e migration 31);
+a auditoria original cobriu `c2cdfd266e8db61d19de343ac46cda7e7cf0618e`
 **Remoto:** `origin` = `https://github.com/nocodenn-cell/SteelSPY`
-**Escopo:** 33 commits publicados (`bce0155..c2cdfd2`), histórico completo,
+**Escopo:** 38 commits publicados (`bce0155..0f5579b`), histórico completo,
 dashboard, CORS, suítes de teste e plano de deploy gratuito.
-**Restrições cumpridas:** nenhuma publicação, nenhum deploy, nenhuma migration
-remota, nenhuma operação destrutiva, nenhum segredo reproduzido.
+**Restrições cumpridas:** nenhum deploy, nenhuma operação destrutiva, nenhum
+segredo reproduzido. A migration 31 foi aplicada com autorização específica em
+2026-11-05.
 
 ---
 
@@ -20,7 +22,7 @@ remota, nenhuma operação destrutiva, nenhum segredo reproduzido.
 | Arquivos `.env` versionados | **Nenhum** |
 | CORS | **Fechado por origem exata**; 21 testes |
 | Menor privilégio do dashboard no banco | **Comprovado** (role só leitura, RLS, 8 testes) e **aplicado no projeto oficial** em 2026-11-05 |
-| Autenticação do dashboard | **Lacuna encontrada e corrigida localmente**; o HEAD publicado ainda abre sem senha |
+| Autenticação do dashboard | **Lacuna encontrada, corrigida e publicada** em `0f5579b`; senha obrigatória (≥ 12) |
 | Ambiente do dashboard | **Configurado e validado** no banco oficial (role com login, tenant HML Alfa, senha de 32 chars, boot headless) |
 | Suítes | **593 backend + 35 PWA verdes** (após a migration 31) |
 | Integridade da branch | **OK** — HEAD local = remoto, `git fsck` limpo |
@@ -36,14 +38,17 @@ rotação de emergência. A única credencial administrativa mencionada está no
 
 | Evidência | Comando | Resultado |
 |-----------|---------|-----------|
-| HEAD local = remoto | `git ls-remote origin refs/heads/feat/sprint3-operacional` | `c2cdfd2…` nos dois |
-| Commits no intervalo | `git log --oneline bce0155..HEAD \| wc -l` | **33** |
+| HEAD local = remoto | `git rev-parse HEAD origin/feat/sprint3-operacional` | iguais após o push de `0f5579b` |
+| Commits no intervalo | `git log --oneline bce0155..HEAD \| wc -l` | **38** |
 | Objetos íntegros | `git fsck --full` | exit 0, nenhuma corrupção |
-| Árvore publicada | `git status --short` antes desta auditoria | limpa |
+| Árvore publicada | `git status --short` | limpa |
 | `main` | branch separada | não foi tocada |
 
-Os 33 commits vão de `d181779` (protótipo VC-01) a `c2cdfd2` (registro da
-correção de CORS). A lista completa está em §10.
+Os 33 commits originais vão de `d181779` (protótipo VC-01) a `c2cdfd2`
+(registro da correção de CORS). Em 2026-11-05, o push `c2cdfd2..0f5579b`
+publicou **5** commits: correção de autenticação do dashboard, scanner de
+histórico, marcação de fixture, migration 31/auditoria e bookkeeping. A lista
+completa está em §10.
 
 ---
 
@@ -75,8 +80,9 @@ f-strings) só são aceitos quando o valor é comprovadamente fictício.
 | 33 commits publicados (`bce0155..c2cdfd2`) | 33 | 10.688 | **0** | 31 |
 | Histórico completo (`--all`) | 71 | 78.828 | **0** | 39 |
 | Após os dois commits locais desta auditoria | 35 no intervalo / 73 no total | 11.998 / 80.138 | **0** | 37 / 45 |
+| Após o push `0f5579b` (histórico completo) | 76 | 80.246 | **0** | 46 |
 
-Os 39 achados sintéticos são:
+Os 46 achados sintéticos são:
 
 - fixtures em `backend/tests/*` com senhas fictícias (`s3cr3t`, `segredo`,
   `antiga`, `%40` etc.) ou marcadas com `# credencial-de-exemplo`;
@@ -151,7 +157,7 @@ if not pwd:
 Isso é aceitável apenas em máquina local isolada. Se o dashboard fosse exposto
 à internet nesse estado, qualquer pessoa com a URL leria os dados do tenant.
 
-**Correção local (não publicada):**
+**Correção publicada em `0f5579b`:**
 
 - novo módulo `dashboard/auth.py`, sem dependência de Streamlit;
 - `DASHBOARD_PASSWORD` passa a ser **obrigatória**, com mínimo de **12**
@@ -162,10 +168,10 @@ Isso é aceitável apenas em máquina local isolada. Se o dashboard fosse expost
 - 6 testes em `backend/tests/test_dashboard_auth.py`, incluindo a garantia de
   que a mensagem de recusa não reproduz o valor.
 
-**Risco residual:** o código corrigido está apenas no worktree/commit local; se
-o `c2cdfd2` for publicado como está, a lacuna persiste. Não publique o
-dashboard nesse commit. A senha compartilhada também não é MFA; para exposição
-pública, prefira VPN/proxy autenticado e avalie rate limiting.
+**Risco residual:** a lacuna de autenticação está fechada no HEAD publicado
+(`0f5579b`), que exige senha de 12+ caracteres. A senha compartilhada também não
+é MFA; para exposição pública, prefira VPN/proxy autenticado e avalie rate
+limiting.
 
 ---
 
@@ -243,13 +249,13 @@ Resumo:
 
 | # | Critério | Estado em 2026-11-05 | Decisão |
 |---|----------|----------------------|---------|
-| 1 | Histórico sem segredo real | 0 bloqueios em 71 commits | **GO** |
-| 2 | Integridade da branch | HEAD = remoto, 33 commits, fsck limpo | **GO** |
+| 1 | Histórico sem segredo real | 0 bloqueios em 76 commits | **GO** |
+| 2 | Integridade da branch | HEAD = remoto (`0f5579b`), 38 commits, fsck limpo | **GO** |
 | 3 | Suítes backend/PWA | 593 + 35 verdes (após a migration 31) | **GO** |
 | 4 | CORS local/same-origin | exato, 21 testes, sem wildcard | **GO** |
 | 5 | CORS de produção (se PWA separado) | origem HTTPS ainda não definida | **NO-GO** até definir |
 | 6 | Dashboard — banco | role de leitura, RLS, 8 testes + prova no projeto oficial | **GO** |
-| 7 | Dashboard — autenticação | lacuna no HEAD publicado; correção local | **NO-GO** no `c2cdfd2`; **GO** após publicar a correção |
+| 7 | Dashboard — autenticação | correção publicada em `0f5579b`; senha obrigatória ≥ 12, 6 testes e boot headless | **GO** |
 | 8 | Dashboard — ambiente oficial | migration 31 aplicada (31/31); role com login, tenant HML Alfa e senha de 32 chars; boot headless OK | **GO local**; falta host publicado |
 | 9 | Validação física (câmera/rede) | roteiro não executado; ADB ausente | **NO-GO** |
 | 10 | Backup/restauração | procedimento escrito, nenhum ensaio | **NO-GO** |
@@ -271,7 +277,7 @@ aparelho real, decidir NF-e e só então autorizar o deploy descrito em
 
 | Risco | Gravidade | Mitigação |
 |-------|-----------|-----------|
-| Dashboard do HEAD publicado autentica sem senha | **Alta se exposto** | publicar a correção local ou manter o dashboard fora da internet |
+| Dashboard do `c2cdfd2` autenticava sem senha | **Fechado** | correção publicada em `0f5579b`; não implantar o commit anterior |
 | Cold start de ~1 min no Render Free | Média | abrir antes do uso ou keep-alive aprovado |
 | Supabase pausa após 7 dias ocioso | Média | uso diário ou retomada manual registrada |
 | 500 MB de banco / 1 GB de Storage / 5 GB de egress | Média | monitorar volume de fotos e dossiês |
@@ -284,8 +290,8 @@ aparelho real, decidir NF-e e só então autorizar o deploy descrito em
 
 **Próximos passos, em ordem:**
 
-1. Autorizar a publicação do commit local desta auditoria (correção de auth do
-   dashboard, scanner de histórico, testes e documentos). **Nada foi enviado.**
+1. ~~Publicar a correção de autenticação~~ — feito em 2026-11-05
+   (`c2cdfd2..0f5579b`).
 2. Autorizar e executar o ensaio de backup/restauração em banco descartável.
 3. Executar o roteiro mobile em Android real (câmera, retry, recarga, papéis).
 4. Decidir o modo NF-e do piloto (`NFE_IO_MOCK=0` + token ou fluxo manual).
@@ -336,21 +342,25 @@ fd52e0a fix(cors): libera DELETE do PWA e fecha as origens do piloto local
 c2cdfd2 docs(progress): registra correcao do CORS do piloto
 ```
 
-**Commits locais desta auditoria (não publicados):**
+**Commits publicados em 2026-11-05 (`c2cdfd2..0f5579b`):**
 
 - `6bf1c01` — `fix(dashboard): exige senha no painel e audita o historico publicado`
 - `5b68c85` — `test(publicacao): marca fixture do scanner como exemplo sintetico`
+- `5bc7d15` — `docs(progress): registra hashes da auditoria pos-push`
 - `be4c1c8` — `feat(dashboard): aplica a migration 31 e valida a role de leitura`
+- `0f5579b` — `docs(progress): registra o commit da migration 31`
 
-O remoto permanece em `c2cdfd2`; estes três commits estão apenas no worktree
-local. Nenhum `git push` foi executado.
+O push `c2cdfd2..0f5579b` foi autorizado explicitamente pelo proprietário;
+nenhum PR, merge ou tag foi criado. Commits de bookkeeping posteriores não
+alteram a entrega registrada em `0f5579b`.
 
 ---
 
 ## 11. O que não foi feito
 
-- Nenhum `git push`, PR, merge ou tag.
+- Nenhum PR, merge ou tag.
 - Nenhum deploy, conta em provedor, domínio ou certificado.
-- Nenhuma migration remota, `DROP`, limpeza de dados ou alteração em produção.
+- Nenhuma operação destrutiva, `DROP` ou limpeza de dados. A única alteração
+  remota foi a migration 31, autorizada em 2026-11-05; nenhum dado foi tocado.
 - Nenhuma rotação de credencial (não houve exposição que a exigisse).
 - Nenhum segredo foi lido, impresso, copiado ou incluído neste relatório.

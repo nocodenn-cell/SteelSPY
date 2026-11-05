@@ -75,14 +75,13 @@ deles é necessário para o piloto.
 
 ## 3. Ordem de execução (quando autorizada)
 
-1. **Congelar** escrita nova e registrar o commit a publicar (hoje
-   `c2cdfd2`; a auditoria pós-push gera um commit local novo, ainda não
-   publicado).
+1. **Congelar** escrita nova e registrar o commit a publicar: hoje `0f5579b`
+   (publicado, inclui a correção de autenticação do dashboard).
 2. **Backup manual** do banco oficial (`pg_dump`/procedimento
    `PROCEDIMENTO_BACKUP_RESTAURACAO.md`) e registrar hash/tamanho.
-3. **Aplicar a migration 31** no projeto oficial com o runner administrativo e
-   `STELLSPY_DASHBOARD_PASSWORD` (≥ 12). Isso é DDL em produção: exige
-   autorização explícita.
+3. **Conferir a migration 31**: já aplicada no projeto oficial em 2026-11-05
+   (31/31). Reexecutar o runner é no-op; a senha da role do dashboard só muda
+   com `STELLSPY_DASHBOARD_PASSWORD` e autorização explícita.
 4. **Criar o Web Service** no Render a partir do repositório/branch autorizado:
    - Root Directory: raiz do repositório;
    - Build: `pip install -r backend/requirements.txt -c backend/constraints.txt`;
