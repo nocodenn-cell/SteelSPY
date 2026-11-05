@@ -9,7 +9,7 @@ pip install -r dashboard/requirements.txt
 # 2. Configurar variáveis (o dashboard NÃO usa a credencial da API)
 # DASHBOARD_DATABASE_URL — obrigatório: conexão da role stellspy_dashboard
 # DASHBOARD_TENANT_ID    — obrigatório: UUID da construtora do piloto
-# DASHBOARD_PASSWORD     — opcional (tela de login)
+# DASHBOARD_PASSWORD     — obrigatório (≥ 12): sem senha o painel não abre
 #
 # A role `stellspy_dashboard` é criada pela migração
 # 20261104170000_dashboard_role.sql: LOGIN só quando
@@ -52,7 +52,7 @@ Linux/macOS: `export PYTHONPATH=backend`
 
 ## Segurança
 
-- Login opcional via `DASHBOARD_PASSWORD` (comparação de digest com `hmac.compare_digest` no app)
+- Login **obrigatório** via `DASHBOARD_PASSWORD` (≥ 12 caracteres, comparação de digest com `hmac.compare_digest`); sem a variável o painel falha fechado e não renderiza dados
 - Acesso **direto ao Postgres** com `DASHBOARD_DATABASE_URL` — credencial distinta da API, restringir rede / VPN em produção
 - Menor privilégio: role `stellspy_dashboard` com **SELECT em cinco tabelas**, `NOBYPASSRLS`, `NOSUPERUSER`, `NOINHERIT`. Sem `usuarios`, `sessoes`, `evidencias`, `recebimentos` ou `fila_nfe`
 - A credencial do painel é presa a **um** tenant (`DASHBOARD_TENANT_ID`); outra construtora não aparece, mesmo que exista no banco
@@ -67,7 +67,7 @@ Linux/macOS: `export PYTHONPATH=backend`
 - [ ] `DASHBOARD_DATABASE_URL` com a role `stellspy_dashboard`, nunca owner/superuser
 - [ ] `DASHBOARD_TENANT_ID` com o UUID da construtora do piloto
 - [ ] Dashboard publicado em URL interna ou protegida (ex.: `https://dashboard.seudominio.com`)
-- [ ] `DASHBOARD_PASSWORD` definido se exposto à internet
+- [ ] `DASHBOARD_PASSWORD` definido com valor aleatório **dedicado** (≥ 12); sem ele o painel não abre
 - [ ] Documentação para o cliente: como interpretar scatter (excesso/falta vs diagonal) e pizza (volume por status)
 
 ## Interpretação rápida

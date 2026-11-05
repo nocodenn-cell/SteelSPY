@@ -24,6 +24,7 @@ senha nem `service_role`.
 | `DASHBOARD_DATABASE_URL` | role `stellspy_dashboard` criada pela migration 31 (somente leitura, presa a um tenant), **não** a role da API nem `postgres` | dashboard Streamlit |
 | `STELLSPY_DASHBOARD_PASSWORD` | escolhida por você, ≥ 12 caracteres | senha da role `stellspy_dashboard` no executor de migrations |
 | `DASHBOARD_TENANT_ID` | UUID da construtora do piloto | tenant explícito do dashboard |
+| `DASHBOARD_PASSWORD` | dedicada ao painel, ≥ 12 caracteres | login do dashboard; sem ela o painel não abre |
 
 - [ ] `DATABASE_URL` usa `stellspy_app.<ref>`, **nunca** `postgres.<ref>`.
 - [ ] `DASHBOARD_DATABASE_URL` usa `stellspy_dashboard` (migration 31), não `postgres`/owner e não `stellspy_app`.
@@ -304,7 +305,7 @@ remotos. Detalhes em `docs/sprint5/RELATORIO_SPRINT5_OPERACIONAL.md`.
 | Fluxo ponta a ponta | pedido → NF-e → recebimento → foto → conciliação → dossiê (JSON/PDF) coberto por teste de integração |
 | Isolamento no fluxo completo | construtora vizinha recebe **404** para pedido, entrega, foto e conteúdo |
 | Hash da evidência | `X-Conteudo-Sha256` e SHA-256 dos bytes conferem no download |
-| Dashboard | exige `DASHBOARD_DATABASE_URL`; com a role da API (RLS) para com mensagem explícita |
+| Dashboard | exige `DASHBOARD_DATABASE_URL` e `DASHBOARD_PASSWORD` (≥ 12); com a role da API (RLS) para com mensagem explícita; sem senha falha fechado |
 | PWA — testes unitários | `npm test` — 16 passed |
 | Backend — suíte completa | ver `PROGRESS.md` (execução final desta entrega) |
 | Celular real / câmera | **pendente de execução física** — roteiro em `docs/sprint5/ROTEIRO_TESTE_MANUAL_MOBILE.md` |

@@ -67,10 +67,10 @@ navegador descarta o cookie e o login parece "não persistir".
 
 ## 4. Dashboard (opcional)
 
-1. Publicar em URL interna/VPN. Se exposto à internet, definir
-   `DASHBOARD_PASSWORD`.
+1. Publicar em URL interna/VPN. A senha `DASHBOARD_PASSWORD` (≥ 12,
+   dedicada) é **obrigatória**: sem ela o painel falha fechado.
 2. Variáveis: `DASHBOARD_DATABASE_URL` (role `stellspy_dashboard`),
-   `DASHBOARD_TENANT_ID`, `PYTHONPATH=backend`.
+   `DASHBOARD_TENANT_ID`, `DASHBOARD_PASSWORD`, `PYTHONPATH=backend`.
 3. O dashboard **não** recebe `DATABASE_URL`, `SUPABASE_DB_ADMIN_URL` nem chave
    `service_role`.
 4. Abrir a tela: o diagnóstico precisa mostrar a construtora e as obras visíveis.

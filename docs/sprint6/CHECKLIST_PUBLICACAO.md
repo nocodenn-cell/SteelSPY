@@ -1,8 +1,13 @@
 # Checklist de publicação — piloto SteelSPY
 
-**Estado:** preparado e auditado em 2026-11-04. **Nada deste checklist foi
-executado**: não houve deploy, push, migration remota nem alteração de dados.
-Ele descreve a ordem segura para quando o proprietário autorizar.
+**Estado:** preparado em 2026-11-04, revisado após o push em 2026-11-05.
+A branch `feat/sprint3-operacional` está publicada no GitHub com HEAD
+`c2cdfd2`; **nada deste checklist de deploy foi executado**: não houve deploy,
+migration remota nem alteração de dados. Ele descreve a ordem segura para quando
+o proprietário autorizar.
+
+Auditoria de apoio: [`RELATORIO_AUDITORIA_POS_PUSH.md`](RELATORIO_AUDITORIA_POS_PUSH.md)
+· Plano de deploy: [`PLANO_DEPLOY_GRATUITO.md`](PLANO_DEPLOY_GRATUITO.md).
 
 **Contrato mínimo:** API FastAPI + PostgreSQL (Supabase oficial
 `akvbtceshpsvsuacueaq`), PWA estático em HTTPS, dashboard Streamlit opcional.
@@ -19,13 +24,15 @@ Orçamento adicional R$ 0,00 — usa apenas a infraestrutura já contratada.
 | 3 | Auditoria de configuração | `cd backend && ..\.venv\Scripts\python.exe scripts\auditar_publicacao.py` | **0 bloqueios**; avisos revisados item a item |
 | 4 | CORS com origens exatas | `CORS_ALLOW_ORIGINS` preenchido, sem `*`, sem caminho, sem `null` | Piloto local: 2 origens (`localhost` e `127.0.0.1:8080`); preflight de `POST` e `DELETE` liberado; auditoria `OK` |
 | 5 | Credencial da API é operacional | usuário da `DATABASE_URL` = `stellspy_app.<ref>` | auditoria: `DATABASE_URL OK` |
-| 6 | Dashboard com menor privilégio | `DASHBOARD_DATABASE_URL` = role `stellspy_dashboard`; `DASHBOARD_TENANT_ID` = UUID da construtora do piloto | `test_dashboard_rls.py` + auditoria sem bloqueio |
+| 6 | Dashboard com menor privilégio | `DASHBOARD_DATABASE_URL` = role `stellspy_dashboard`; `DASHBOARD_TENANT_ID` = UUID da construtora do piloto; `DASHBOARD_PASSWORD` definida (≥ 12) | `test_dashboard_rls.py` + `test_dashboard_auth.py` + auditoria sem bloqueio |
 | 7 | Segredo de sessão forte | `PWA_SESSION_SECRET` ≥ 32 caracteres, fora do Git | auditoria: `OK` |
 | 8 | Cookie coerente com HTTPS | `PWA_COOKIE_SECURE=1`; `SameSite=None` só se PWA e API estiverem em domínios diferentes | auditoria: `OK` |
-| 9 | Nenhum segredo versionado | varredura do script (JWT `service_role`, chave privada, senha em URL, `.env`) | 0 bloqueios |
+| 9 | Nenhum segredo versionado | `cd backend && ..\.venv\Scripts\python.exe scripts\auditar_historico.py --range=--all` | **0 bloqueios** em 71 commits; 39 sintéticos revisados |
 | 10 | PWA sem configuração de teste | `pwa/index.html` com `"apiBaseUrl": ""` | commit limpo |
 | 11 | Backup verificável | `PROCEDIMENTO_BACKUP_RESTAURACAO.md` executado em ensaio | hash, tamanho e contagem de linhas registrados |
 | 12 | Validação física registrada | `docs/sprint5/ROTEIRO_TESTE_MANUAL_MOBILE.md` com capturas | **pendente enquanto não houver execução real** |
+| 13 | Branch publicada íntegra | `git rev-parse HEAD` = `git ls-remote origin …`; `git fsck --full` | `c2cdfd2` nos dois; fsck exit 0; 33 commits |
+| 14 | Autenticação do dashboard | `DASHBOARD_PASSWORD` obrigatória (≥ 12) | correção local + `test_dashboard_auth.py`; **ausente no HEAD `c2cdfd2`** |
 
 ---
 
@@ -62,7 +69,7 @@ O mesmo `.env` local serve ao desenvolvimento; em produção cada processo receb
 
 - `DASHBOARD_DATABASE_URL` (role `stellspy_dashboard`, só leitura).
 - `DASHBOARD_TENANT_ID` (UUID da construtora).
-- `DASHBOARD_PASSWORD` (opcional; recomendado se exposto à internet).
+- `DASHBOARD_PASSWORD` (obrigatória, ≥ 12, dedicada; sem ela o painel não abre).
 - `PYTHONPATH=backend`.
 
 ### PWA
@@ -94,19 +101,26 @@ O mesmo `.env` local serve ao desenvolvimento; em produção cada processo receb
 
 ## 4. GO / NO-GO
 
-| Critério | GO | NO-GO |
-|----------|----|-------|
-| Auditoria de publicação | 0 bloqueios | qualquer bloqueio |
-| Testes | backend e PWA verdes | falha ou teste pulado sem justificativa |
-| Validação física | roteiro executado com capturas | sem execução real |
-| Backup | ensaio de restauração concluído | sem ensaio ou sem hash |
-| CORS | origens exatas, HTTPS | vazio, `*`, ou origem HTTP de produção |
-| Credenciais | app e dashboard separadas, menor privilégio | admin/owner na aplicação |
-| Dados | piloto em construtora/obra sintética ou autorizada | dado real sem autorização escrita |
-| Reversão | commit anterior identificado e backup disponível | sem caminho de volta |
+| Critério | GO | NO-GO | Estado em 2026-11-05 |
+|----------|----|-------|----------------------|
+| Auditoria de publicação | 0 bloqueios | qualquer bloqueio | **GO** — 0 bloqueios, 4 avisos revisados |
+| Histórico Git | 0 segredo real | `.env`, token ou senha real | **GO** — 0 bloqueios em 71 commits |
+| Testes | backend e PWA verdes | falha ou teste pulado sem justificativa | **GO** — 592 backend + 35 PWA; 1 skip de Storage local |
+| Integridade da branch | HEAD = remoto, fsck limpo | divergência ou corrupção | **GO** — `c2cdfd2`, 33 commits |
+| Validação física | roteiro executado com capturas | sem execução real | **NO-GO** |
+| Backup | ensaio de restauração concluído | sem ensaio ou sem hash | **NO-GO** |
+| CORS | origens exatas, HTTPS | vazio (se PWA separado), `*`, HTTP em produção | **GO** same-origin; **NO-GO** se separar sem origem HTTPS exata |
+| Credenciais | app e dashboard separadas, menor privilégio | admin/owner na aplicação | **GO** |
+| Autenticação do dashboard | senha obrigatória ≥ 12 | painel abre sem senha | **NO-GO no `c2cdfd2`**; correção local pronta |
+| Dados | construtora/obra sintética ou autorizada | dado real sem autorização escrita | **NO-GO** até decisão |
+| Reversão | commit anterior identificado e backup disponível | sem caminho de volta | **GO parcial** — commit identificado; backup pendente |
 
 **Critério de parada:** qualquer item NO-GO interrompe a publicação. Não existe
 "publicar e corrigir depois" para isolamento, credencial ou backup.
+
+**Veredito atual:** **NO-GO para piloto real**; o código está limpo em segredos e
+verde, mas faltam validação física, backup, autenticação do dashboard publicada,
+ambiente oficial e decisão de NF-e/dados.
 
 ---
 

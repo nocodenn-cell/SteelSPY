@@ -1,8 +1,9 @@
 # Riscos restantes — Sprint 6 (piloto operacional)
 
-**Data:** 2026-11-04
+**Data:** 2026-11-05 (revisado após o push; base de 2026-11-04)
 **Escopo:** piloto controlado com uma construtora, infraestrutura existente,
-orçamento adicional R$ 0,00. Sem push, deploy ou alteração de dados reais.
+orçamento adicional R$ 0,00. Branch publicada sem deploy, sem migration remota
+e sem alteração de dados reais.
 
 Legenda de impacto: **A** = bloqueia o piloto; **B** = degrada a operação;
 **C** = higiene/técnico. Probabilidade: alta/média/baixa.
@@ -18,9 +19,9 @@ Legenda de impacto: **A** = bloqueia o piloto; **B** = degrada a operação;
 | R3 | Backup/restauração não ensaiados | média | A | Procedimento escrito; **nenhum dump/restore executado** | Ensaio em banco descartável antes do GO |
 | R4 | `CORS_ALLOW_ORIGINS` de produção ainda não definido | média | A na publicação | **Piloto local fechado:** `localhost` e `127.0.0.1:8080`, preflight de `POST`/`DELETE` e 21 testes; a API recusa config ambígua no boot | Informar a origem HTTPS exata no ambiente publicado |
 | R5 | `NFE_IO_MOCK=1` no ambiente local | alta | A se usado no piloto | Auditoria: AVISO | `NFE_IO_MOCK=0` e token real, ou fluxo manual de NF-e explicitamente aceito |
-| R6 | Dashboard sem credencial configurada | alta | B | `DASHBOARD_DATABASE_URL` ausente; role de menor privilégio pronta e testada | Definir URL da role `stellspy_dashboard` + `DASHBOARD_TENANT_ID` |
+| R6 | Dashboard sem credencial de banco **ou sem senha de entrada** | alta | B (A se exposto) | `DASHBOARD_DATABASE_URL` ausente; role de menor privilégio pronta e testada. No HEAD `c2cdfd2`, `DASHBOARD_PASSWORD` vazia fazia o painel abrir sem login; **correção local** torna a senha obrigatória (≥ 12) | Publicar a correção ou manter o dashboard fora da internet; definir URL da role + `DASHBOARD_TENANT_ID` + `DASHBOARD_PASSWORD` |
 
-Qualquer R1–R5 aberto no momento da publicação é **NO-GO** conforme
+Qualquer R1–R6 aberto no momento da publicação é **NO-GO** conforme
 `CHECKLIST_PUBLICACAO.md`.
 
 ---
@@ -42,7 +43,12 @@ Qualquer R1–R5 aberto no momento da publicação é **NO-GO** conforme
 | R17 | Dados sintéticos permanecem no projeto oficial | alta | C | Nada foi removido, por instrução | Decisão do proprietário; remoção exige autorização |
 | R18 | iPhone/Safari sem HTTPS interno | alta | B para iPhone | Android tem caminho `adb reverse`; HTTPS exige decisão de domínio | Se o piloto for Android, não bloqueia |
 | R19 | Região única / sem HA no Supabase | baixa | B | Backup manual documentado | Aceitar risco ou contratar redundância (fora do orçamento) |
-| R20 | Varredura de segredos é heurística | média | C | Detecta JWT `service_role`, PEM, senha em URL, `.env`, atribuição de segredo; exceção explícita `credencial-de-exemplo` | Não substitui cofre de segredos nem revisão humana |
+| R20 | Varredura de segredos é heurística | média | C | Detecta JWT `service_role`, PEM, senha em URL, `.env`, atribuição de segredo; exceção explícita `credencial-de-exemplo`; 8 testes do scanner | Não substitui cofre de segredos nem revisão humana |
+| R21 | Cold start de ~1 min no Render Free | alta | B | Plano gratuito documentado; serviço dorme após 15 min | Abrir o PWA antes do uso ou aprovar keep-alive (consome a franquia) |
+| R22 | Supabase Free pausa após 7 dias de baixa atividade | média | B | Dados preservados; retomada manual em até 1 ano | Uso diário no piloto ou lembrete de retomada |
+| R23 | Sem backup automático no Supabase Free | alta | A | Procedimento manual documentado | `pg_dump` antes do piloto e periodicamente; ensaiar restauração |
+| R24 | 500 MB de banco, 1 GB de Storage e 5 GB de egress no Free | média | B | Fotos normalizadas; Storage privado | Monitorar volume de evidências e dossiês |
+| R25 | Keep-alive consome quase toda a franquia de 750 h | média | C | Um único serviço; 730 h/mês < 750 h | Decisão explícita do proprietário; monitorar consumo |
 
 ---
 

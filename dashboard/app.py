@@ -11,7 +11,7 @@ Execução (raiz do repo):
 Requer:
   DASHBOARD_DATABASE_URL  — conexão da role `stellspy_dashboard` (SELECT, sob RLS)
   DASHBOARD_TENANT_ID     — UUID da construtora do piloto
-  DASHBOARD_PASSWORD      — opcional, senha de entrada do painel
+  DASHBOARD_PASSWORD      — obrigatória, ≥ 12 caracteres; sem ela o painel não abre
 
 A credencial é presa a **uma** construtora: a transação declara
 `app.tenant_id` com esse UUID e o RLS filtra o resto. Credencial de superusuário
@@ -20,8 +20,6 @@ ou com BYPASSRLS é recusada — o piloto não precisa enxergar outros clientes.
 
 from __future__ import annotations
 
-import hashlib
-import hmac
 import os
 import sys
 from datetime import date, timedelta
@@ -35,6 +33,8 @@ import pandas as pd
 import plotly.express as px
 import streamlit as st
 
+from dashboard.auth import motivo_recusa, senha_confere, senha_configurada
+from dashboard.diagnostico import normalizar_tenant, problemas_da_credencial
 from dashboard.metros import metros_do_item
 from dashboard.queries import (
     carregar_nfes_resumo,
@@ -43,7 +43,6 @@ from dashboard.queries import (
     get_engine,
     listar_obras,
 )
-from dashboard.diagnostico import normalizar_tenant, problemas_da_credencial
 
 
 @st.cache_data(ttl=300, show_spinner="Conexão…")
@@ -79,18 +78,17 @@ def _cached_nfes_resumo(database_url: str, tenant_id: str, obra_id: str, d0_iso:
 
 
 def _check_password() -> bool:
-    pwd = os.getenv("DASHBOARD_PASSWORD", "").strip()
-    if not pwd:
-        return True
+    pwd = senha_configurada(os.getenv("DASHBOARD_PASSWORD"))
+    recusa = motivo_recusa(pwd)
+    if recusa:
+        st.error(recusa)
+        st.stop()
     if st.session_state.get("_auth_ok"):
         return True
     st.title("SteelSpy — Acesso")
     secret = st.text_input("Senha do dashboard", type="password")
     if st.button("Entrar"):
-        ok = hmac.compare_digest(
-            hashlib.sha256(secret.encode()).digest(),
-            hashlib.sha256(pwd.encode()).digest(),
-        )
+        ok = senha_confere(secret, pwd)
         if ok:
             st.session_state._auth_ok = True
             st.rerun()

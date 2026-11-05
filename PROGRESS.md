@@ -1,19 +1,21 @@
 # PROGRESS — SteelSPY 2.0
 
-> Atualizado em 2026-11-04. Fonte de verdade do estado de execução contínua.
+> Atualizado em 2026-11-05. Fonte de verdade do estado de execução contínua.
 
 ## Fase atual
 
-**FASE C — Sprint 6: preparação do piloto operacional.**
-O remoto continua homologado com as 30 migrations da Sprint 5; a Sprint 6
-acrescenta a migration 31 (role `stellspy_dashboard`), ainda **pendente no
-projeto oficial** e já exercitada na suíte local. O dashboard deixou de aceitar
-credencial de back-office: usa a role de leitura presa a um tenant. O PWA ganhou
-rascunho persistido (4 h) e estado por operação (`pendente`/`confirmada`/
-`falhou`), sem prometer fila offline. CORS passou a validar origens exatas no
-boot e há auditoria de segredos versionados. A suíte fechou em **570 testes de
-backend** e **35 de PWA**; a validação em celular real com câmera e o ensaio de
-backup seguem explicitamente pendentes. Nenhum deploy, push ou alteração remota
+**FASE C — Sprint 6: branch publicada, auditoria pós-push e preparação do piloto.**
+A `feat/sprint3-operacional` está no GitHub com HEAD `c2cdfd2` (33 commits).
+A auditoria do histórico completo encontrou **0 segredos reais** (71 commits,
+39 fixtures sintéticas revisadas) e a branch está íntegra (`fsck` limpo, HEAD =
+remoto). A suíte fechou em **592 testes de backend** (405 unitários + 187 de
+integração, 1 skip de Storage local) e **35 de PWA**. Foi encontrada uma lacuna
+real de autenticação no dashboard: sem `DASHBOARD_PASSWORD` ele abria sem login.
+A correção local torna a senha obrigatória (≥ 12) e adiciona 6 testes; **ainda
+não foi publicada**. O plano de deploy gratuito (Render Free + Supabase Free,
+same-origin, HTTPS) está documentado, mas **nada foi publicado**. O piloto real
+permanece **NO-GO** por validação física, backup, ambiente do dashboard e
+decisão de NF-e/dados. Nenhum deploy, migration remota ou alteração de produção
 foi executado.
 
 ## Concluído
@@ -77,6 +79,13 @@ foi executado.
 | Sprint 6 (5) | auditoria de configuração e segredos | `scripts/auditar_publicacao.py`: `.env` local → **0 bloqueios, 5 avisos**; varredura do Git sem segredo real; 17 testes |
 | Sprint 6 (5) | runbook, backup e GO/NO-GO documentados | `docs/sprint6/CHECKLIST_PUBLICACAO.md`, `DEPLOY_HOMOLOGACAO.md`, `PROCEDIMENTO_BACKUP_RESTAURACAO.md`, `RELATORIO_RISCOS.md` |
 | Sprint 6 | suítes finais | backend **570 passed, 2 deselected** (180 s, 31 migrations); PWA **35 passed** (4 arquivos) |
+| Pós-push (2026-11-05) | branch publicada e íntegra | `origin/feat/sprint3-operacional` = `c2cdfd2`; 33 commits em `bce0155..c2cdfd2`; `git fsck --full` exit 0 |
+| Pós-push (2026-11-05) | histórico sem segredo real | `scripts/auditar_historico.py`: **0 bloqueios** nos 33 commits e em 71 do histórico; 31/39 sintéticos revisados; 8 testes do scanner |
+| Pós-push (2026-11-05) | dashboard falha fechado sem senha | `dashboard/auth.py`: `DASHBOARD_PASSWORD` obrigatória (≥ 12), comparação em tempo constante; 6 testes; **correção local, não publicada** |
+| Pós-push (2026-11-05) | CORS confirmado | 21 testes; `*`, `null`, caminho, query, credencial embutida e porta inválida recusados; same-origin dispensa CORS |
+| Pós-push (2026-11-05) | suítes completas | backend **592 passed** (405 + 187 integração), 1 skip de Storage local; PWA **35 passed** |
+| Pós-push (2026-11-05) | plano de deploy gratuito | `docs/sprint6/PLANO_DEPLOY_GRATUITO.md`: Render Free same-origin + Supabase Free, HTTPS, R$ 0,00; **nada executado** |
+| Pós-push (2026-11-05) | GO/NO-GO revisado | `docs/sprint6/RELATORIO_AUDITORIA_POS_PUSH.md`: **NO-GO** para piloto real; 13 portões com estado |
 
 ## Pendente
 
@@ -87,15 +96,21 @@ foi executado.
   (ADB ausente); Android via `adb reverse` tem caminho de custo zero; iPhone
   exige HTTPS.
 - Aplicar a migration 31 no projeto oficial com `STELLSPY_DASHBOARD_PASSWORD` e
-  configurar `DASHBOARD_DATABASE_URL` + `DASHBOARD_TENANT_ID` onde o dashboard
-  for publicado. A role da aplicação continua sem `BYPASSRLS`.
-- Definir `CORS_ALLOW_ORIGINS` de produção com a origem HTTPS exata do PWA (o
-  piloto local já usa `localhost`/`127.0.0.1:8080` e a auditoria marca `OK`).
+  configurar `DASHBOARD_DATABASE_URL` + `DASHBOARD_TENANT_ID` +
+  `DASHBOARD_PASSWORD` onde o dashboard for publicado. A role da aplicação
+  continua sem `BYPASSRLS`.
+- Publicar a correção local de autenticação do dashboard: no HEAD `c2cdfd2`,
+  `DASHBOARD_PASSWORD` vazia fazia o painel abrir sem login.
+- Definir `CORS_ALLOW_ORIGINS` de produção **apenas se** o PWA ficar em outra
+  origem; no deploy same-origin planejado, a lista fica vazia (21 testes).
+- Executar o deploy gratuito de `docs/sprint6/PLANO_DEPLOY_GRATUITO.md` somente
+  após autorização: Render Free (API + PWA na mesma origem), Supabase Free,
+  HTTPS, sem cartão e sem custo adicional.
 - Ensaiar backup e restauração em banco descartável
   (`docs/sprint6/PROCEDIMENTO_BACKUP_RESTAURACAO.md`) antes do GO.
-- Revisar os 5 avisos da auditoria de publicação (`NFE_IO_MOCK=1`, CORS vazio,
-  dashboard não configurado, `SUPABASE_DB_ADMIN_URL` no `.env`, `service_role`
-  presente) e transformar em decisão registrada.
+- Revisar os 4 avisos da auditoria de publicação (`NFE_IO_MOCK=1`,
+  `SUPABASE_DB_ADMIN_URL` no `.env`, dashboard não configurado,
+  `service_role` presente) e transformar em decisão registrada.
 - Decidir o destino dos dados sintéticos HML no projeto oficial: permanecem duas
   construtoras `hml-*`, 3 usuários e uma evidência. A limpeza automática pode ser
   bloqueada pela FK de evidências; qualquer remoção exige autorização explícita.
@@ -110,35 +125,40 @@ foi executado.
 
 | Bloqueio | O que falta |
 |----------|-------------|
-| Deploy | fora de escopo por instrução; nada foi publicado nem enviado ao Git remoto |
+| Deploy | fora de escopo por instrução; branch publicada, mas nada foi publicado em ambiente |
 | PWA em aparelho real | câmera e fluxo de campo não exercitados; ADB ausente nesta máquina |
 | Backup | procedimento escrito, nenhum dump/restore executado antes do GO |
-| Publicação | `CORS_ALLOW_ORIGINS`, `DASHBOARD_DATABASE_URL`/`DASHBOARD_TENANT_ID` e `NFE_IO_MOCK=0` ainda não definidos |
+| Dashboard | migration 31 não aplicada no oficial; `DASHBOARD_PASSWORD` ainda opcional no HEAD publicado |
+| Publicação | `CORS_ALLOW_ORIGINS` de produção (se PWA separado), `DASHBOARD_*` e `NFE_IO_MOCK=0` ainda não definidos |
+| Piloto real | validação física, backup, ambiente do dashboard e decisão de NF-e/dados abertos — **NO-GO** |
 | VC-01 em campo | fotografias do cenário real de recebimento e GPU (RTX 4070 não presente nesta máquina) |
 | Sprint 5 dados | ≥ 60 obras / ≥ 600 fotos rotuladas; sem isso, não há métrica honesta |
 
 ## Último commit de entrega
 
-Sprint 6 (piloto operacional): `be28e00` dashboard com role de leitura presa ao
-tenant, `772d1ff` PWA com rascunho e estado por envio, `78c92fb` preparação
-Android por ADB, `5127fe8` teste dos dez passos, `70745e3` CORS/auditoria/
-documentos e `fd52e0a` CORS do piloto com `DELETE` e origens locais. Nenhum foi
-enviado ao remoto. Detalhe em `docs/sprint6/RELATORIO_SPRINT6.md` §8.
-(Atualizações de bookkeeping deste arquivo não contam.)
+A branch `feat/sprint3-operacional` foi publicada em 2026-11-04 com **33
+commits** (`bce0155..c2cdfd2`), HEAD `c2cdfd2` — dashboard com role de leitura,
+PWA com rascunho/estado, preparação Android, teste dos dez passos, CORS/auditoria
+e correção do CORS local. A auditoria pós-push de 2026-11-05 gera um commit
+**local** com a correção de autenticação do dashboard, o scanner de histórico,
+testes e documentos; ele **não foi enviado** ao remoto. Detalhe em
+`docs/sprint6/RELATORIO_AUDITORIA_POS_PUSH.md` §10.
 
 ## Próxima ação automática
 
-1. Instalar ADB e executar o roteiro manual em celular real, anexando capturas —
+1. Autorizar a publicação do commit local da auditoria (dashboard fail-closed,
+   scanner de histórico, testes e documentos). Nada foi enviado.
+2. Ensaiar backup/restauração em banco descartável antes do GO.
+3. Instalar ADB e executar o roteiro manual em celular real, anexando capturas —
    câmera e retry com queda de rede são os pontos que nenhum teste automatizado
    cobre. Android: `adb reverse` + `http://localhost:8080`; iPhone: HTTPS.
-2. Aplicar a migration 31 no projeto oficial com `STELLSPY_DASHBOARD_PASSWORD`
-   e configurar `DASHBOARD_DATABASE_URL` + `DASHBOARD_TENANT_ID`.
-3. Ensaiar backup/restauração em banco descartável antes do GO.
-4. Definir `CORS_ALLOW_ORIGINS` com as origens exatas e decidir o modo NF-e
-   (`NFE_IO_MOCK=0` com token ou fluxo manual aceito).
-5. Decidir com o proprietário o destino dos dados HML sintéticos e a rotação da
-   senha administrativa após a janela de homologação.
-6. Sprint 5: coletar e anonimizar fotografias reais; nenhum modelo entra no
+4. Definir o modo NF-e (`NFE_IO_MOCK=0` com token ou fluxo manual aceito) e
+   decidir o destino dos dados HML sintéticos.
+5. Aplicar a migration 31 no projeto oficial e configurar o dashboard com
+   `DASHBOARD_PASSWORD` obrigatória.
+6. Autorizar e executar o deploy de `docs/sprint6/PLANO_DEPLOY_GRATUITO.md`;
+   smoke test com dados sintéticos.
+7. Sprint 5: coletar e anonimizar fotografias reais; nenhum modelo entra no
    produto sem os portões de `exp_vc02`.
 
 Nenhuma operação destrutiva, push ou deploy é autorizada sem pedido explícito.
