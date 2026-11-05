@@ -107,6 +107,17 @@ def test_dashboard_com_credencial_administrativa_bloqueia() -> None:
     assert "BLOQUEADO" in _situacoes(itens, "DASHBOARD_DATABASE_URL")
 
 
+def test_dashboard_com_usuario_do_pooler_nao_bloqueia() -> None:
+    # O pooler do Supabase exige o usuário no formato <role>.<ref>.
+    itens = _com(
+        DASHBOARD_DATABASE_URL=(
+            "postgresql+psycopg2://stellspy_dashboard.ref:s3cr3t-dash-1"
+            "@aws-0-sa-east-1.pooler.supabase.com:5432/postgres"
+        )
+    )
+    assert "BLOQUEADO" not in _situacoes(itens, "DASHBOARD_DATABASE_URL")
+
+
 def test_dashboard_sem_tenant_explicito_bloqueia() -> None:
     assert "BLOQUEADO" in _situacoes(_com(DASHBOARD_TENANT_ID="qualquer-obra"), "DASHBOARD_TENANT_ID")
 

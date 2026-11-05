@@ -87,9 +87,13 @@ O mesmo `.env` local serve ao desenvolvimento; em produção cada processo receb
    `python scripts/apply_migrations.py --env-file .env`.
    A nova migration cria a role `stellspy_dashboard` como `NOLOGIN` se
    `STELLSPY_DASHBOARD_PASSWORD` não for fornecida — falha fechada.
+   **Feito em 2026-11-05:** 31/31 aplicadas no projeto oficial; reexecutar é
+   no-op.
 4. Provar a role do dashboard:
    `python scripts/diagnostico_supabase.py` e um `SELECT` no tenant do piloto.
    Sem `BYPASSRLS`, sem escrita, sem acesso a outros tenants.
+   **Feito em 2026-11-05** contra o banco remoto (Alfa/Beta isolados, escrita
+   negada); repetir no host do dashboard antes de abrir ao piloto.
 5. Publicar a API com as variáveis da seção 2.
 6. Publicar o PWA em HTTPS com `apiBaseUrl` apontando para a API.
 7. Publicar o dashboard (se autorizado) em URL interna/protegida.
@@ -103,15 +107,17 @@ O mesmo `.env` local serve ao desenvolvimento; em produção cada processo receb
 
 | Critério | GO | NO-GO | Estado em 2026-11-05 |
 |----------|----|-------|----------------------|
-| Auditoria de publicação | 0 bloqueios | qualquer bloqueio | **GO** — 0 bloqueios, 4 avisos revisados |
+| Auditoria de publicação | 0 bloqueios | qualquer bloqueio | **GO** — 0 bloqueios, 3 avisos revisados |
 | Histórico Git | 0 segredo real | `.env`, token ou senha real | **GO** — 0 bloqueios em 71 commits |
-| Testes | backend e PWA verdes | falha ou teste pulado sem justificativa | **GO** — 592 backend + 35 PWA; 1 skip de Storage local |
+| Testes | backend e PWA verdes | falha ou teste pulado sem justificativa | **GO** — 593 backend + 35 PWA; 2 skips de Storage local; 52 focados após a migration 31 |
 | Integridade da branch | HEAD = remoto, fsck limpo | divergência ou corrupção | **GO** — `c2cdfd2`, 33 commits |
+| Migrations oficiais | todas aplicadas e registradas | pendência ou falha parcial | **GO** — 31/31 em 2026-11-05 |
 | Validação física | roteiro executado com capturas | sem execução real | **NO-GO** |
 | Backup | ensaio de restauração concluído | sem ensaio ou sem hash | **NO-GO** |
 | CORS | origens exatas, HTTPS | vazio (se PWA separado), `*`, HTTP em produção | **GO** same-origin; **NO-GO** se separar sem origem HTTPS exata |
 | Credenciais | app e dashboard separadas, menor privilégio | admin/owner na aplicação | **GO** |
-| Autenticação do dashboard | senha obrigatória ≥ 12 | painel abre sem senha | **NO-GO no `c2cdfd2`**; correção local pronta |
+| Autenticação do dashboard | senha obrigatória ≥ 12 | painel abre sem senha | **NO-GO no `c2cdfd2`**; correção local pronta e testada headless |
+| Ambiente do dashboard | role, tenant e senha definidos | falta role/tenant/senha | **GO local** — role `stellspy_dashboard` com LOGIN, tenant HML Alfa (provisório) e senha de 32 chars; falta publicar |
 | Dados | construtora/obra sintética ou autorizada | dado real sem autorização escrita | **NO-GO** até decisão |
 | Reversão | commit anterior identificado e backup disponível | sem caminho de volta | **GO parcial** — commit identificado; backup pendente |
 
@@ -119,8 +125,9 @@ O mesmo `.env` local serve ao desenvolvimento; em produção cada processo receb
 "publicar e corrigir depois" para isolamento, credencial ou backup.
 
 **Veredito atual:** **NO-GO para piloto real**; o código está limpo em segredos e
-verde, mas faltam validação física, backup, autenticação do dashboard publicada,
-ambiente oficial e decisão de NF-e/dados.
+verde, e o dashboard já tem role/tenant/senha validados no banco oficial. Faltam
+validação física, backup, publicação da correção de autenticação, host do
+dashboard e decisão de NF-e/dados.
 
 ---
 

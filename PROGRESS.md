@@ -4,19 +4,24 @@
 
 ## Fase atual
 
-**FASE C — Sprint 6: branch publicada, auditoria pós-push e preparação do piloto.**
+**FASE C — Sprint 6: branch publicada, auditoria pós-push e dashboard operacional.**
 A `feat/sprint3-operacional` está no GitHub com HEAD `c2cdfd2` (33 commits).
 A auditoria do histórico completo encontrou **0 segredos reais** (71 commits,
 39 fixtures sintéticas revisadas) e a branch está íntegra (`fsck` limpo, HEAD =
-remoto). A suíte fechou em **592 testes de backend** (405 unitários + 187 de
-integração, 1 skip de Storage local) e **35 de PWA**. Foi encontrada uma lacuna
+remoto). A suíte fechou em **593 testes de backend** (406 unitários + 187 de
+integração, 2 skips de Storage local) e **35 de PWA**. Foi encontrada uma lacuna
 real de autenticação no dashboard: sem `DASHBOARD_PASSWORD` ele abria sem login.
 A correção local torna a senha obrigatória (≥ 12) e adiciona 6 testes; **ainda
-não foi publicada**. O plano de deploy gratuito (Render Free + Supabase Free,
-same-origin, HTTPS) está documentado, mas **nada foi publicado**. O piloto real
-permanece **NO-GO** por validação física, backup, ambiente do dashboard e
-decisão de NF-e/dados. Nenhum deploy, migration remota ou alteração de produção
-foi executado.
+não foi publicada**. A **migration 31 foi aplicada no projeto oficial** (31/31) e
+o dashboard foi configurado com a role `stellspy_dashboard`: login por senha
+dedicada, SELECT em 5 tabelas, `NOBYPASSRLS`, e isolamento Alfa/Beta provado
+contra o banco remoto. O painel sobe e autentica headless (Streamlit AppTest),
+mostrando apenas a obra do tenant configurado. O tenant em uso é o **HML Alfa**,
+provisório até o cadastro da construtora do piloto. O plano de deploy gratuito
+(Render Free + Supabase Free, same-origin, HTTPS) está documentado, mas **nada
+foi publicado**. O piloto real permanece **NO-GO** por validação física, backup,
+publicação da correção de autenticação e decisão de NF-e/dados. Nenhum deploy ou
+push foi executado.
 
 ## Concluído
 
@@ -86,6 +91,12 @@ foi executado.
 | Pós-push (2026-11-05) | suítes completas | backend **592 passed** (405 + 187 integração), 1 skip de Storage local; PWA **35 passed** |
 | Pós-push (2026-11-05) | plano de deploy gratuito | `docs/sprint6/PLANO_DEPLOY_GRATUITO.md`: Render Free same-origin + Supabase Free, HTTPS, R$ 0,00; **nada executado** |
 | Pós-push (2026-11-05) | GO/NO-GO revisado | `docs/sprint6/RELATORIO_AUDITORIA_POS_PUSH.md`: **NO-GO** para piloto real; 13 portões com estado |
+| Dashboard (2026-11-05) | migration 31 aplicada no projeto oficial | `apply_migrations.py --env-file .env` → **31/31**; `20261104170000_dashboard_role` registrada em `schema_migrations` |
+| Dashboard (2026-11-05) | role de leitura com login dedicado | `stellspy_dashboard`: `super=f bypassrls=f inherit=f createdb=f createrole=f login=t`; SELECT só em 5 tabelas, 0 UPDATE, 0 default privileges |
+| Dashboard (2026-11-05) | isolamento provado no banco remoto | Alfa → 1 obra e a própria construtora; Beta → 1 obra distinta; sem contexto → 0; INSERT em `obras` e SELECT em `pedidos` negados |
+| Dashboard (2026-11-05) | painel sobe e autentica headless | `DASHBOARD_PASSWORD` (32 chars) aceita; Streamlit AppTest sem exceção, gate de senha e título "Economia & conformidade"; KPI vazio porque não há NF-e no período |
+| Dashboard (2026-11-05) | auditoria de publicação sem bloqueio | falha fechada corrigida para aceitar `stellspy_dashboard.<ref>` do pooler; **0 bloqueios, 3 avisos**; 52 testes focados verdes |
+| Dashboard (2026-11-05) | suíte completa após a migration 31 | backend **593 passed, 2 skipped** (406 unitários + 187 integração; 31 migrations no banco local); container `stellspy-pg` devolvido ao estado parado |
 
 ## Pendente
 
@@ -95,10 +106,9 @@ foi executado.
   navegador, papéis e isolamento. `preparar_android.py` falhou aqui com exit 2
   (ADB ausente); Android via `adb reverse` tem caminho de custo zero; iPhone
   exige HTTPS.
-- Aplicar a migration 31 no projeto oficial com `STELLSPY_DASHBOARD_PASSWORD` e
-  configurar `DASHBOARD_DATABASE_URL` + `DASHBOARD_TENANT_ID` +
-  `DASHBOARD_PASSWORD` onde o dashboard for publicado. A role da aplicação
-  continua sem `BYPASSRLS`.
+- Trocar o tenant provisório do dashboard: `DASHBOARD_TENANT_ID` aponta hoje
+  para a `HML Construtora Alfa`; ao cadastrar a construtora do piloto, atualizar
+  a variável (a role não muda) e revalidar com `dashboard.diagnostico`.
 - Publicar a correção local de autenticação do dashboard: no HEAD `c2cdfd2`,
   `DASHBOARD_PASSWORD` vazia fazia o painel abrir sem login.
 - Definir `CORS_ALLOW_ORIGINS` de produção **apenas se** o PWA ficar em outra
@@ -108,9 +118,9 @@ foi executado.
   HTTPS, sem cartão e sem custo adicional.
 - Ensaiar backup e restauração em banco descartável
   (`docs/sprint6/PROCEDIMENTO_BACKUP_RESTAURACAO.md`) antes do GO.
-- Revisar os 4 avisos da auditoria de publicação (`NFE_IO_MOCK=1`,
-  `SUPABASE_DB_ADMIN_URL` no `.env`, dashboard não configurado,
-  `service_role` presente) e transformar em decisão registrada.
+- Revisar os 3 avisos da auditoria de publicação (`NFE_IO_MOCK=1`,
+  `SUPABASE_DB_ADMIN_URL` no `.env`, `service_role` presente) e transformar em
+  decisão registrada.
 - Decidir o destino dos dados sintéticos HML no projeto oficial: permanecem duas
   construtoras `hml-*`, 3 usuários e uma evidência. A limpeza automática pode ser
   bloqueada pela FK de evidências; qualquer remoção exige autorização explícita.
@@ -128,8 +138,8 @@ foi executado.
 | Deploy | fora de escopo por instrução; branch publicada, mas nada foi publicado em ambiente |
 | PWA em aparelho real | câmera e fluxo de campo não exercitados; ADB ausente nesta máquina |
 | Backup | procedimento escrito, nenhum dump/restore executado antes do GO |
-| Dashboard | migration 31 não aplicada no oficial; `DASHBOARD_PASSWORD` ainda opcional no HEAD publicado |
-| Publicação | `CORS_ALLOW_ORIGINS` de produção (se PWA separado), `DASHBOARD_*` e `NFE_IO_MOCK=0` ainda não definidos |
+| Dashboard | role e painel configurados e validados no banco oficial; falta publicar a correção de autenticação e apontar `DASHBOARD_TENANT_ID` para a construtora real |
+| Publicação | `CORS_ALLOW_ORIGINS` de produção (se PWA separado), host do dashboard e `NFE_IO_MOCK=0` ainda não definidos |
 | Piloto real | validação física, backup, ambiente do dashboard e decisão de NF-e/dados abertos — **NO-GO** |
 | VC-01 em campo | fotografias do cenário real de recebimento e GPU (RTX 4070 não presente nesta máquina) |
 | Sprint 5 dados | ≥ 60 obras / ≥ 600 fotos rotuladas; sem isso, não há métrica honesta |
@@ -142,7 +152,9 @@ PWA com rascunho/estado, preparação Android, teste dos dez passos, CORS/audito
 e correção do CORS local. A auditoria pós-push de 2026-11-05 gera um commit
 **locais** `6bf1c01` (correção de autenticação do dashboard, scanner de
 histórico, testes e documentos) e `5b68c85` (marcação da fixture); eles **não
-foram enviados** ao remoto. Detalhe em
+foram enviados** ao remoto. Um novo commit local registra a **migration 31
+aplicada**, o dashboard configurado, a correção do validador de URL do pooler e
+a atualização dos documentos; também **não foi enviado**. Detalhe em
 `docs/sprint6/RELATORIO_AUDITORIA_POS_PUSH.md` §10.
 
 ## Próxima ação automática
@@ -155,8 +167,8 @@ foram enviados** ao remoto. Detalhe em
    cobre. Android: `adb reverse` + `http://localhost:8080`; iPhone: HTTPS.
 4. Definir o modo NF-e (`NFE_IO_MOCK=0` com token ou fluxo manual aceito) e
    decidir o destino dos dados HML sintéticos.
-5. Aplicar a migration 31 no projeto oficial e configurar o dashboard com
-   `DASHBOARD_PASSWORD` obrigatória.
+5. Ao cadastrar a construtora do piloto, atualizar `DASHBOARD_TENANT_ID` (hoje
+   `HML Construtora Alfa`) e revalidar com `dashboard.diagnostico`.
 6. Autorizar e executar o deploy de `docs/sprint6/PLANO_DEPLOY_GRATUITO.md`;
    smoke test com dados sintéticos.
 7. Sprint 5: coletar e anonimizar fotografias reais; nenhum modelo entra no

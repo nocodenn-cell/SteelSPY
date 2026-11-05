@@ -19,9 +19,10 @@ remota, nenhuma operação destrutiva, nenhum segredo reproduzido.
 | `service_role` / credencial administrativa exposta | **Não** |
 | Arquivos `.env` versionados | **Nenhum** |
 | CORS | **Fechado por origem exata**; 21 testes |
-| Menor privilégio do dashboard no banco | **Comprovado** (role só leitura, RLS, 8 testes) |
+| Menor privilégio do dashboard no banco | **Comprovado** (role só leitura, RLS, 8 testes) e **aplicado no projeto oficial** em 2026-11-05 |
 | Autenticação do dashboard | **Lacuna encontrada e corrigida localmente**; o HEAD publicado ainda abre sem senha |
-| Suítes | **592 backend + 35 PWA verdes** |
+| Ambiente do dashboard | **Configurado e validado** no banco oficial (role com login, tenant HML Alfa, senha de 32 chars, boot headless) |
+| Suítes | **593 backend + 35 PWA verdes** (após a migration 31) |
 | Integridade da branch | **OK** — HEAD local = remoto, `git fsck` limpo |
 | Prontidão para piloto real | **NO-GO** pelos portões operacionais listados em §8 |
 
@@ -128,6 +129,15 @@ O painel abre a transação com `set_config('app.tenant_id', ..., true)` e
 atributos da role, grants, ausência de contexto = 0 obras, tenant A × B,
 escrita negada e recusa de credencial de back-office.
 
+**Aplicado no projeto oficial em 2026-11-05:** migration 31 aplicada pelo runner
+(`31/31`), role com `super=f bypassrls=f inherit=f createdb=f createrole=f
+login=t`, SELECT apenas nas 5 tabelas, 0 UPDATE e 0 default privileges. Com o
+pooler, o usuário é `stellspy_dashboard.<ref>`; a auditoria foi corrigida para
+aceitar esse formato (antes exigia o nome exato e bloqueava a configuração
+válida). Provas no banco remoto: Alfa vê 1 obra e a própria construtora, Beta vê
+1 obra distinta, sem contexto 0, `INSERT` em `obras` e `SELECT` em `pedidos`
+negados.
+
 ### Autenticação — lacuna encontrada
 
 No HEAD publicado (`c2cdfd2`), `dashboard/app.py::_check_password` fazia:
@@ -192,9 +202,9 @@ exige a origem HTTPS exata se o PWA for separado da API.
 
 | Suíte | Comando | Resultado |
 |-------|---------|-----------|
-| Backend (sem integração) | `pytest -q -m "not supabase_local"` | **405 passed, 187 skipped, 2 deselected** |
+| Backend (sem integração) | `pytest -q -m "not supabase_local"` | **406 passed, 187 skipped, 2 deselected** |
 | Integração (PostgreSQL real + 31 migrations) | `pytest tests/integration -q` | **187 passed, 1 skipped** |
-| Total backend | soma das duas | **592 passed**; 1 skip é o teste de Storage do Supabase local |
+| Total backend | `pytest tests -q` | **593 passed, 2 skipped**; os skips são os testes de Storage do Supabase local |
 | PWA | `npm test` | **35 passed** (4 arquivos) |
 | Foco desta auditoria | dashboard auth + CORS + publicação + histórico | **59 passed** |
 
@@ -235,12 +245,12 @@ Resumo:
 |---|----------|----------------------|---------|
 | 1 | Histórico sem segredo real | 0 bloqueios em 71 commits | **GO** |
 | 2 | Integridade da branch | HEAD = remoto, 33 commits, fsck limpo | **GO** |
-| 3 | Suítes backend/PWA | 592 + 35 verdes | **GO** |
+| 3 | Suítes backend/PWA | 593 + 35 verdes (após a migration 31) | **GO** |
 | 4 | CORS local/same-origin | exato, 21 testes, sem wildcard | **GO** |
 | 5 | CORS de produção (se PWA separado) | origem HTTPS ainda não definida | **NO-GO** até definir |
-| 6 | Dashboard — banco | role de leitura, RLS, 8 testes | **GO** |
+| 6 | Dashboard — banco | role de leitura, RLS, 8 testes + prova no projeto oficial | **GO** |
 | 7 | Dashboard — autenticação | lacuna no HEAD publicado; correção local | **NO-GO** no `c2cdfd2`; **GO** após publicar a correção |
-| 8 | Dashboard — ambiente oficial | migration 31 e variáveis não aplicadas | **NO-GO** |
+| 8 | Dashboard — ambiente oficial | migration 31 aplicada (31/31); role com login, tenant HML Alfa e senha de 32 chars; boot headless OK | **GO local**; falta host publicado |
 | 9 | Validação física (câmera/rede) | roteiro não executado; ADB ausente | **NO-GO** |
 | 10 | Backup/restauração | procedimento escrito, nenhum ensaio | **NO-GO** |
 | 11 | NF-e real | `NFE_IO_MOCK=1` no `.env` local | **NO-GO** até `NFE_IO_MOCK=0` ou fluxo manual aceito |
@@ -249,10 +259,11 @@ Resumo:
 | 14 | Reversão | commit anterior identificável; backup pendente | **GO parcial** |
 
 **Veredito:** **NO-GO para um piloto real hoje.** O código publicado está limpo
-em segredos e verde em testes, mas faltam os portões operacionais 7–11 e 13.
-O avanço seguro é: publicar a correção de autenticação do dashboard, executar
-backup/restauração, validar em aparelho real, decidir NF-e e só então autorizar
-o deploy descrito em `PLANO_DEPLOY_GRATUITO.md`.
+em segredos e verde em testes, e o dashboard já tem banco e ambiente validados.
+Faltam os portões operacionais 7 e 9–11 e 13. O avanço seguro é: publicar a
+correção de autenticação do dashboard, executar backup/restauração, validar em
+aparelho real, decidir NF-e e só então autorizar o deploy descrito em
+`PLANO_DEPLOY_GRATUITO.md`.
 
 ---
 
@@ -278,8 +289,8 @@ o deploy descrito em `PLANO_DEPLOY_GRATUITO.md`.
 2. Autorizar e executar o ensaio de backup/restauração em banco descartável.
 3. Executar o roteiro mobile em Android real (câmera, retry, recarga, papéis).
 4. Decidir o modo NF-e do piloto (`NFE_IO_MOCK=0` + token ou fluxo manual).
-5. Autorizar a migration 31 no projeto oficial e configurar o dashboard com
-   `DASHBOARD_PASSWORD` obrigatória.
+5. Trocar `DASHBOARD_TENANT_ID` (hoje HML Alfa) pelo tenant da construtora do
+   piloto e repetir o diagnóstico no host publicado.
 6. Autorizar o deploy seguindo `PLANO_DEPLOY_GRATUITO.md`; smoke test sintético.
 7. Registrar URL, commit, horário, backup e resultados no relatório do piloto.
 

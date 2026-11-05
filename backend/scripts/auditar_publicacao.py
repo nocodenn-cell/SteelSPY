@@ -183,7 +183,10 @@ def avaliar_env(valores: dict[str, str]) -> list[Item]:
 
     dash_url = valores.get("DASHBOARD_DATABASE_URL", "")
     if dash_url:
-        if _usuario(dash_url) != "stellspy_dashboard":
+        usuario_dash = _usuario(dash_url)
+        if usuario_dash != "stellspy_dashboard" and not usuario_dash.startswith(
+            "stellspy_dashboard."
+        ):
             bloqueado(
                 "DASHBOARD_DATABASE_URL",
                 "dashboard deve usar a role stellspy_dashboard, não credencial administrativa",

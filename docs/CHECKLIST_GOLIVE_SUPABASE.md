@@ -27,8 +27,8 @@ senha nem `service_role`.
 | `DASHBOARD_PASSWORD` | dedicada ao painel, ≥ 12 caracteres | login do dashboard; sem ela o painel não abre |
 
 - [ ] `DATABASE_URL` usa `stellspy_app.<ref>`, **nunca** `postgres.<ref>`.
-- [ ] `DASHBOARD_DATABASE_URL` usa `stellspy_dashboard` (migration 31), não `postgres`/owner e não `stellspy_app`.
-- [ ] `DASHBOARD_TENANT_ID` aponta para a construtora do piloto.
+- [x] `DASHBOARD_DATABASE_URL` usa `stellspy_dashboard.<ref>` (migration 31), não `postgres`/owner e não `stellspy_app` — validado em 2026-11-05.
+- [ ] `DASHBOARD_TENANT_ID` aponta para a construtora do piloto (hoje HML Alfa, provisório).
 - [ ] `SUPABASE_DB_ADMIN_URL` fica fora do processo da API.
 - [ ] Nenhuma chave `service_role` em variável `NEXT_PUBLIC_*`, PWA ou log.
 
@@ -39,6 +39,10 @@ Estado em 2026-11-04 (`backend/.env`, verificado sem exibir valores):
 - `DATABASE_URL`: role operacional no pooler real, porta 5432.
 - `SUPABASE_DB_ADMIN_URL`: senha regravada com `python scripts/configurar_senha_admin.py`
   e **conexão administrativa OK** em 2026-11-04 (sem exibir o valor).
+- Em 2026-11-05: migration 31 aplicada no projeto oficial (**31/31**),
+  `STELLSPY_DASHBOARD_PASSWORD` (43 chars) e `DASHBOARD_PASSWORD` (32 chars)
+  geradas localmente, `DASHBOARD_DATABASE_URL` e `DASHBOARD_TENANT_ID` definidos
+  — valores nunca exibidos nem versionados.
 
 ---
 
