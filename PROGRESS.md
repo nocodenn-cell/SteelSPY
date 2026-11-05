@@ -140,8 +140,9 @@ A branch `feat/sprint3-operacional` foi publicada em 2026-11-04 com **33
 commits** (`bce0155..c2cdfd2`), HEAD `c2cdfd2` — dashboard com role de leitura,
 PWA com rascunho/estado, preparação Android, teste dos dez passos, CORS/auditoria
 e correção do CORS local. A auditoria pós-push de 2026-11-05 gera um commit
-**local** com a correção de autenticação do dashboard, o scanner de histórico,
-testes e documentos; ele **não foi enviado** ao remoto. Detalhe em
+**locais** `6bf1c01` (correção de autenticação do dashboard, scanner de
+histórico, testes e documentos) e `5b68c85` (marcação da fixture); eles **não
+foram enviados** ao remoto. Detalhe em
 `docs/sprint6/RELATORIO_AUDITORIA_POS_PUSH.md` §10.
 
 ## Próxima ação automática

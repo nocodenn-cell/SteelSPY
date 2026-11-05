@@ -73,6 +73,7 @@ f-strings) só são aceitos quando o valor é comprovadamente fictício.
 |-----------|---------|--------------------|-----------|------------|
 | 33 commits publicados (`bce0155..c2cdfd2`) | 33 | 10.688 | **0** | 31 |
 | Histórico completo (`--all`) | 71 | 78.828 | **0** | 39 |
+| Após os dois commits locais desta auditoria | 35 no intervalo / 73 no total | 11.998 / 80.138 | **0** | 37 / 45 |
 
 Os 39 achados sintéticos são:
 
@@ -324,9 +325,13 @@ fd52e0a fix(cors): libera DELETE do PWA e fecha as origens do piloto local
 c2cdfd2 docs(progress): registra correcao do CORS do piloto
 ```
 
-**Commit local desta auditoria:** ver `git log -1` após a entrega; não foi
-publicado. Ele contém a correção de autenticação do dashboard, o scanner de
-histórico, os testes e estes documentos.
+**Commits locais desta auditoria (não publicados):**
+
+- `6bf1c01` — `fix(dashboard): exige senha no painel e audita o historico publicado`
+- `5b68c85` — `test(publicacao): marca fixture do scanner como exemplo sintetico`
+
+O remoto permanece em `c2cdfd2`; estes dois commits estão apenas no worktree
+local. Nenhum `git push` foi executado.
 
 ---
 
