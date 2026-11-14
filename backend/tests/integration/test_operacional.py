@@ -330,3 +330,82 @@ def test_mutacao_remover_policy_de_nfe_logs_faz_o_isolamento_falhar(
             text("SELECT count(*) FROM nfe_logs WHERE id = :id"), {"id": cenario["nfe_b"]}
         ).scalar_one()
     assert restaurado == 0, "a policy restaurada precisa voltar a bloquear"
+
+
+def test_erro_na_busca_do_xml_nao_deixa_linha_presa_em_processando(
+    sessao_app_factory: Any, cenario: dict[str, Any], abrir_como: Any
+) -> None:
+    """
+    Antes: uma exceção em `buscar_xml` escapava do tick depois do claim. A linha
+    ficava 'processando' para sempre e as demais do lote nunca eram tratadas.
+    Agora a falha vira tentativa frustrada, com o motivo registrado.
+    """
+    from app.services.fila_retentativa import processar_tick_fila
+
+    def buscar_quebrado(_chave: str) -> None:
+        raise RuntimeError("SEFAZ respondeu JSON inválido")
+
+    session = sessao_app_factory()
+    try:
+        processar_tick_fila(session, buscar_xml=buscar_quebrado)
+    finally:
+        session.close()
+
+    with abrir_como(cenario["tenant_a"]) as conn:
+        status, erro = conn.execute(
+            text("SELECT status, ultimo_erro FROM fila_nfe WHERE obra_id = :o"),
+            {"o": cenario["obra_a"]},
+        ).one()
+    assert status == "pendente"
+    assert "JSON inválido" in erro
+
+
+def test_reaper_devolve_linha_travada_em_processando(
+    sql_owner: Any, abrir_como: Any, cenario: dict[str, Any]
+) -> None:
+    """
+    Worker morreu depois do claim: a linha ficou 'processando' sem ninguém para
+    liberá-la. O reaper devolve à fila e conta a tentativa.
+    """
+    with sql_owner.begin() as conn:
+        conn.execute(
+            text(
+                "UPDATE fila_nfe SET status = 'processando', tentativas = 0, "
+                "updated_at = NOW() - INTERVAL '1 hour' WHERE obra_id = :o"
+            ),
+            {"o": cenario["obra_a"]},
+        )
+
+    with abrir_como(None) as conn:
+        conn.execute(text("SELECT fila_reaper_travadas(10)"))
+
+    with abrir_como(cenario["tenant_a"]) as conn:
+        status, tentativas = conn.execute(
+            text("SELECT status, tentativas FROM fila_nfe WHERE obra_id = :o"),
+            {"o": cenario["obra_a"]},
+        ).one()
+    assert status == "pendente"
+    assert tentativas == 1
+
+
+def test_reaper_marca_falha_quando_a_linha_esgotou_tentativas(
+    sql_owner: Any, abrir_como: Any, cenario: dict[str, Any]
+) -> None:
+    """Linha que derruba o worker a cada vez não pode ficar em loop infinito."""
+    with sql_owner.begin() as conn:
+        conn.execute(
+            text(
+                "UPDATE fila_nfe SET status = 'processando', tentativas = 2, "
+                "updated_at = NOW() - INTERVAL '1 hour' WHERE obra_id = :o"
+            ),
+            {"o": cenario["obra_a"]},
+        )
+
+    with abrir_como(None) as conn:
+        conn.execute(text("SELECT fila_reaper_travadas(10)"))
+
+    with abrir_como(cenario["tenant_a"]) as conn:
+        status = conn.execute(
+            text("SELECT status FROM fila_nfe WHERE obra_id = :o"), {"o": cenario["obra_a"]}
+        ).scalar_one()
+    assert status == "falha"

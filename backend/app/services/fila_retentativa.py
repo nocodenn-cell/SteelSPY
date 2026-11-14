@@ -99,6 +99,26 @@ def _reivindicar_lote_fila(db: Session, limite: int = 50) -> list[Any]:
     return list(rows)
 
 
+PRAZO_CLAIM_MINUTOS = 10
+
+
+def _reaper_travadas(db: Session) -> None:
+    """
+    Devolve à fila linhas que um worker morto deixou em 'processando'.
+    Falha aqui não pode impedir o tick de processar o lote atual.
+    """
+    try:
+        liberadas = db.execute(
+            text("SELECT fila_reaper_travadas(:m)"), {"m": PRAZO_CLAIM_MINUTOS}
+        ).scalar()
+        db.commit()
+        if liberadas:
+            logger.warning("Reaper liberou %s linha(s) de fila travadas em processando", liberadas)
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Falha no reaper da fila: %s", e)
+        db.rollback()
+
+
 def processar_tick_fila(
     db: Session,
     *,
@@ -107,6 +127,7 @@ def processar_tick_fila(
     notificar_aguardando: Callable[[str, str], None] | None = None,
 ) -> list[dict[str, Any]]:
     resultados: list[dict[str, Any]] = []
+    _reaper_travadas(db)
     claimed = _reivindicar_lote_fila(db)
 
     for row in claimed:
