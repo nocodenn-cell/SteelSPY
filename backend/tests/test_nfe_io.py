@@ -59,3 +59,19 @@ def test_adapter_preserva_codigo_do_produto():
     }
     out = _adaptar_resposta_nfe_io(raw)
     assert [i["codigo_produto"] for i in out["itens"]] == ["ACO-10-GEU", "ACO-12-GEU", None]
+
+
+def test_resposta_200_com_corpo_invalido_vira_indisponivel(monkeypatch):
+    """Corpo que não é JSON não pode estourar o worker: a NF fica indisponível e volta à fila."""
+    import httpx
+
+    from app.services import nfe_io
+
+    monkeypatch.setattr(nfe_io, "NFE_IO_MOCK", False)
+    monkeypatch.setattr(nfe_io, "NFE_IO_TOKEN", "token-de-teste")
+    monkeypatch.setattr(
+        nfe_io.httpx,
+        "get",
+        lambda url, **kw: httpx.Response(200, content=b"<html>manutencao</html>"),
+    )
+    assert nfe_io.buscar_xml_ou_json_por_chave("1" * 44) is None

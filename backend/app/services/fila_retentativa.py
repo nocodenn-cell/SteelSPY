@@ -149,7 +149,17 @@ def processar_tick_fila(
                 logger.warning("Falha ao notificar aguardando: %s", e)
             marcar_notificado_aguardando(db, fid)
 
-        xml_data = buscar_xml(chave)
+        # `buscar_xml` pode levantar (JSON inválido, erro de rede inesperado...).
+        # Fora de um try, a exceção abortava o lote e deixava a linha em
+        # 'processando' sem que nada a recuperasse. Agora vira tentativa frustrada.
+        erro_busca: str | None = None
+        try:
+            xml_data = buscar_xml(chave)
+        except Exception as e:  # noqa: BLE001
+            logger.exception("Falha ao buscar XML (fila id=%s): %s", fid, e)
+            xml_data = None
+            erro_busca = f"erro ao buscar XML: {e!s}"[:2000]
+
         if xml_data is not None:
             try:
                 if ao_sucesso:
@@ -205,11 +215,16 @@ def processar_tick_fila(
                 SET status = 'pendente',
                     tentativas = :t,
                     proxima_tentativa = :proxima,
-                    ultimo_erro = 'XML indisponível na API',
+                    ultimo_erro = :erro,
                     updated_at = NOW()
                 WHERE id = :id
             """),
-            {"id": str(fid), "t": nova_tentativa, "proxima": proxima},
+            {
+                "id": str(fid),
+                "t": nova_tentativa,
+                "proxima": proxima,
+                "erro": erro_busca or "XML indisponível na API",
+            },
         )
         db.commit()
         resultados.append(
