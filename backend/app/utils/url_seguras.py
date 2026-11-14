@@ -1,5 +1,5 @@
 """
-Validação de URLs usadas pelo servidor (evita SSRF em foto_url e open redirect no laudo).
+Validação de URLs usadas pelo servidor (evita SSRF no download de foto_url).
 """
 
 from __future__ import annotations
@@ -61,25 +61,6 @@ def validar_url_imagem_publica(url: str | None) -> str | None:
         raise URLNaoPermitidaError("host da foto_url não permitido (rede local / metadata bloqueados).")
 
     return raw
-
-
-def url_redirect_laudo_confiavel(url: str, supabase_project_url: str) -> bool:
-    """
-    Redirecionamento 302 do laudo só para o mesmo host do projeto Supabase
-    (evita open redirect se laudo_pdf_url for alterado indevidamente).
-    """
-    if not supabase_project_url or not url:
-        return False
-    try:
-        alvo = urlparse(url.strip())
-        base = urlparse(supabase_project_url.strip().rstrip("/"))
-    except Exception:
-        return False
-    if (alvo.scheme or "").lower() != "https":
-        return False
-    if not alvo.hostname or not base.hostname:
-        return False
-    return alvo.hostname.lower() == base.hostname.lower()
 
 
 # ---------------------------------------------------------------------------

@@ -11,7 +11,6 @@ from typing import Any, Literal
 from uuid import UUID
 
 from fastapi import APIRouter, BackgroundTasks, Cookie, Depends, Header, HTTPException, Request, Response
-from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, Field, field_validator, model_validator
 from sqlalchemy import text
 from sqlalchemy.orm import Session
@@ -31,7 +30,6 @@ from app.services.fila_retentativa import enfileirar_apos_falha_xml
 from app.services.conferencia_persist import carregar_obra_por_id, gravar_conferencia_com_xml
 from app.services.divergencias_pdf import gerar_divergencias_pdf_bytes, nome_arquivo_divergencias
 from app.services.laudo_pdf import gerar_laudo_pdf_bytes, montar_contexto_laudo, nome_arquivo_laudo
-from app.services.laudo_storage import SUPABASE_URL as LAUDO_SUPABASE_URL, enviar_laudo_pdf
 from app.services.mensagem_fiscal import gerar_mensagem_fiscal
 from app.services.nfe_io import buscar_xml_ou_json_por_chave
 from app.services.whatsapp_evolution import notificar_mensagem_fiscal, notificar_xml_pendente
@@ -41,7 +39,7 @@ from app.tenant import (
     consultar_obra,
     resolver_tenant_de_nfe_log,
 )
-from app.utils.url_seguras import URLNaoPermitidaError, url_redirect_laudo_confiavel, validar_url_imagem_publica
+from app.utils.url_seguras import URLNaoPermitidaError, validar_url_imagem_publica
 
 logger = logging.getLogger(__name__)
 
@@ -326,7 +324,7 @@ def post_conferir(
     }
 
 
-# Devolve Response (bytes do PDF) ou RedirectResponse (302), nunca um modelo
+# Devolve Response (bytes do PDF), nunca um modelo
 # Pydantic. A anotacao de retorno e uma uniao de subclasses de Response e, a
 # partir do FastAPI 0.162, isso exige response_model=None no decorador — sem
 # ele o import do router falha com FastAPIError e a API nao sobe.
@@ -337,12 +335,12 @@ def get_laudo_pdf(
     db: Session = Depends(get_db),
     x_api_key: str | None = Header(None, alias="X-API-KEY"),
     pwa_session_cookie: str | None = Cookie(None, alias=SESSION_COOKIE_NAME),
-) -> Response | RedirectResponse:
+) -> Response:
     """
     Laudo de Conformidade Técnica (PDF).
-    Se `laudo_pdf_url` estiver preenchido (cache no Supabase Storage), redireciona (302).
-    Caso contrário gera o PDF, tenta enviar ao Storage e grava a URL; se o upload falhar,
-    devolve o arquivo inline.
+    O PDF é gerado e entregue pela própria API, depois da autorização. Não há
+    redirecionamento para storage: o laudo contém dados da obra e do fornecedor,
+    e uma URL pública e previsível contornaria a autorização.
     """
     sessao = sessao_opcional(request, db)
 
@@ -385,11 +383,6 @@ def get_laudo_pdf(
             detail="Laudo disponível após conclusão da conferência (status diferente de PENDENTE com xml_data).",
         )
 
-    cached = row.get("laudo_pdf_url")
-    cand = str(cached).strip() if cached else ""
-    if cand.startswith("https://") and url_redirect_laudo_confiavel(cand, LAUDO_SUPABASE_URL or ""):
-        return RedirectResponse(url=cand, status_code=302)
-
     nfe_log = {
         "id": row["id"],
         "chave_acesso": row["chave_acesso"],
@@ -407,19 +400,6 @@ def get_laudo_pdf(
     ctx = montar_contexto_laudo(nfe_log=nfe_log, obra=obra)
     pdf_bytes = gerar_laudo_pdf_bytes(ctx)
     fname = nome_arquivo_laudo(ctx)
-
-    public_url = enviar_laudo_pdf(nfe_log_id, pdf_bytes)
-    if public_url:
-        db.execute(
-            text("""
-                UPDATE nfe_logs
-                SET laudo_pdf_url = :url, laudo_pdf_gerado_em = NOW()
-                WHERE id = :id
-            """),
-            {"url": public_url, "id": str(nfe_log_id)},
-        )
-        db.commit()
-        return RedirectResponse(url=public_url, status_code=302)
 
     return Response(
         content=pdf_bytes,

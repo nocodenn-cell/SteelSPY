@@ -20,11 +20,3 @@ def test_foto_allowlist(monkeypatch):
     url_seguras.validar_url_imagem_publica("https://storage.supabase.co/bucket/x.png")
     with pytest.raises(url_seguras.URLNaoPermitidaError):
         url_seguras.validar_url_imagem_publica("https://evil.com/x.png")
-
-
-def test_redirect_laudo_somente_supabase():
-    base = "https://abcdefgh.supabase.co"
-    ok = f"{base}/storage/v1/object/public/laudos/x.pdf"
-    assert url_seguras.url_redirect_laudo_confiavel(ok, base) is True
-    assert url_seguras.url_redirect_laudo_confiavel("https://evil.com/phish", base) is False
-    assert url_seguras.url_redirect_laudo_confiavel(ok, "") is False

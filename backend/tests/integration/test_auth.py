@@ -514,3 +514,62 @@ def test_override_propaga_para_itens_e_resumo_e_preserva_o_fato_tecnico(
     assert corpo["status_tecnico"] == "VERMELHO"
     assert corpo["override"]["aplicado"] is True
     assert corpo["override"]["ultimo"]["usuario_id"] == str(equipe["ids"]["eng_a"])
+
+
+_SNAPSHOT_VERMELHO = {
+    "status": "VERMELHO",
+    "alerta": "MATERIAL_NAO_SOLICITADO",
+    "detalhes": [],
+    "motivos": ["Material não solicitado"],
+    "resumo": {"total": 1, "verdes": 0, "amarelos": 0, "vermelhos": 1},
+    "itens_processados": [],
+}
+
+
+def _preparar_nf_vermelha_com_item(sql_owner: Any, cenario: dict[str, Any], nfe_id: Any) -> None:
+    with sql_owner.begin() as conn:
+        conn.execute(
+            text(
+                "UPDATE nfe_logs SET status_conferencia = 'VERMELHO', "
+                "xml_data = CAST(:x AS jsonb) WHERE id = :id"
+            ),
+            {"id": str(nfe_id), "x": json.dumps(_SNAPSHOT_VERMELHO)},
+        )
+        conn.execute(
+            text(
+                "INSERT INTO nfe_itens (tenant_id, nfe_log_id, item_numero, "
+                "material_recebido, status_item, divergencias) "
+                "VALUES (:t, :n, 1, 'Cimento', 'VERMELHO', '[]'::jsonb) "
+                "ON CONFLICT (nfe_log_id, item_numero) DO UPDATE SET status_item = 'VERMELHO'"
+            ),
+            {"t": str(cenario["tenant_a"]), "n": str(nfe_id)},
+        )
+
+
+# ---------------------------------------------------------------------------
+# 16. Laudo: a API autoriza e entrega o PDF; nunca redireciona para URL pública
+# ---------------------------------------------------------------------------
+
+
+def test_laudo_autorizado_nao_redireciona_para_bucket_publico(
+    cliente: Any, equipe: dict[str, Any], sql_owner: Any, monkeypatch: Any
+) -> None:
+    """
+    Antes: o laudo era enviado a um bucket PÚBLICO e a API redirecionava (302) para
+    a URL pública. Quem conhecia o UUID lia o PDF sem passar pela autorização.
+    """
+    from app.routers import conferencia as rota
+
+    nfe = equipe["nfe_a"]
+    _preparar_nf_vermelha_com_item(sql_owner, equipe, nfe)
+    # Simula storage configurado (nome e atributos podem não existir após a correção).
+    monkeypatch.setattr(rota, "LAUDO_SUPABASE_URL", "https://proj.supabase.co", raising=False)
+    url_publica = f"https://proj.supabase.co/storage/v1/object/public/laudos/{nfe}.pdf"
+    monkeypatch.setattr(rota, "enviar_laudo_pdf", lambda _id, _pdf: url_publica, raising=False)
+
+    assert _login(cliente, equipe["emails"]["eng_a"]).status_code == 200
+    r = cliente.get(f"/conferir/{nfe}/laudo.pdf", follow_redirects=False)
+
+    assert r.status_code == 200, r.text
+    assert "location" not in r.headers
+    assert r.content.startswith(b"%PDF")
