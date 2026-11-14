@@ -12,7 +12,8 @@ from __future__ import annotations
 import os
 
 from dotenv import load_dotenv
-from sqlalchemy import create_engine, event
+from sqlalchemy import create_engine, event, text
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.config_banco import resolver_database_url
@@ -47,3 +48,13 @@ def get_db():
         yield db
     finally:
         db.close()
+
+
+def banco_responde() -> bool:
+    """Ping do banco para o /health: False em qualquer falha do SQLAlchemy (conexão, pool, timeout)."""
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+        return True
+    except SQLAlchemyError:
+        return False

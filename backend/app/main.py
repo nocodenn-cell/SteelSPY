@@ -11,6 +11,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.exc import InterfaceError, OperationalError
 from sqlalchemy.exc import TimeoutError as TimeoutDePool
 
+from app.db import banco_responde
 from app.routers import auth_pwa, auth_usuario, conferencia, evidencias, pedidos
 
 logger = logging.getLogger(__name__)
@@ -66,5 +67,12 @@ async def _banco_indisponivel(request: Request, exc: Exception) -> JSONResponse:
 
 
 @app.get("/health")
-def health() -> dict[str, str]:
-    return {"status": "ok"}
+def health() -> JSONResponse:
+    """Confere o banco de verdade: sem isso, o load balancer manteria no ar uma API sem Postgres."""
+    if banco_responde():
+        return JSONResponse(content={"status": "ok", "banco": "ok"})
+    return JSONResponse(
+        status_code=503,
+        content={"status": "degradado", "banco": "indisponivel"},
+        headers={"Retry-After": "5"},
+    )
