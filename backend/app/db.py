@@ -11,15 +11,17 @@ from __future__ import annotations
 
 import os
 
+from dotenv import load_dotenv
 from sqlalchemy import create_engine, event
 from sqlalchemy.orm import Session, sessionmaker
 
+from app.config_banco import resolver_database_url
 from app.tenant import CHAVE_TENANT, aplicar_contexto_na_conexao
 
-DATABASE_URL = os.getenv(
-    "DATABASE_URL",
-    "postgresql+psycopg2://postgres:postgres@localhost:5432/postgres",
-)
+# Carrega backend/.env quando existir. Não sobrescreve variáveis já definidas no ambiente.
+load_dotenv()
+
+DATABASE_URL = resolver_database_url(os.environ)
 
 engine = create_engine(DATABASE_URL, pool_pre_ping=True)
 SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False, class_=Session)
