@@ -65,7 +65,9 @@ def test_chave_base_converte_quilo_em_metros_com_bitola() -> None:
 
 def test_chave_base_sem_bitola_nao_inventa_conversao() -> None:
     assert chave_base(100.0, "KG", None)[0] == "kg"
-    assert chave_base(50.0, "SACO", None)[0] == "saco"
+    # Saco converge para kg (50 kg/saco). Antes era base "saco", incomparável com kg.
+    nome, valor = chave_base(50.0, "SACO", None)
+    assert nome == "kg" and valor == pytest.approx(2500.0)
 
 
 def test_chave_base_unidade_vazia_devolve_none() -> None:
@@ -242,10 +244,50 @@ def test_quilo_faturado_casa_com_metro_pedido_quando_ha_bitola() -> None:
 def test_cimento_sem_bitola_casa_pela_unidade() -> None:
     resultado = correlacionar(
         linhas=[linha("A", linha_no=1, qtd=1000, un="SACO", bitola=None, categoria="cimento")],
-        itens=[item(n=1, qtd=900, un="SACO", bitola=None)],
+        itens=[item(n=1, qtd=900, un="SACO", bitola=None, descricao="CIMENTO CP-II 50KG")],
     )
     assert len(resultado.atribuicoes) == 1
-    assert resultado.atribuicoes[0].quantidade_consumida_base == pytest.approx(900.0)
+    assert resultado.atribuicoes[0].quantidade_consumida_base == pytest.approx(45000.0)  # em kg
+
+
+def test_pedido_em_sacos_casa_com_nf_em_kg_quando_e_a_mesma_carga() -> None:
+    """28 sacos pedidos = 1400 kg faturados: antes ia para revisão por unidade incompatível."""
+    resultado = correlacionar(
+        linhas=[linha("A", linha_no=1, qtd=28, un="SACO", bitola=None, categoria="cimento")],
+        itens=[item(n=1, qtd=1400, un="KG", bitola=None, descricao="CIMENTO CP-II 50KG")],
+    )
+    assert len(resultado.atribuicoes) == 1
+    assert resultado.atribuicoes[0].base == "kg"
+    assert resultado.atribuicoes[0].quantidade_consumida_base == pytest.approx(1400.0)
+    assert resultado.linhas_sem_fatura == [] and resultado.faturados_sem_pedido == []
+
+
+def test_tonelada_faturada_casa_com_pedido_em_kg() -> None:
+    resultado = correlacionar(
+        linhas=[linha("A", linha_no=1, qtd=1400, un="KG", bitola=None, categoria="cimento")],
+        itens=[item(n=1, qtd=1.4, un="TON", bitola=None, descricao="CIMENTO CP-II")],
+    )
+    assert len(resultado.atribuicoes) == 1
+    assert resultado.atribuicoes[0].quantidade_consumida_base == pytest.approx(1400.0)
+
+
+def test_m3_nao_converte_para_kg_sem_densidade_do_material() -> None:
+    """m³ continua incomparável com kg: a densidade depende do material."""
+    resultado = correlacionar(
+        linhas=[linha("A", linha_no=1, qtd=1, un="M3", bitola=None, categoria="cimento")],
+        itens=[item(n=1, qtd=1400, un="KG", bitola=None, descricao="CIMENTO CP-II")],
+    )
+    assert resultado.atribuicoes == []
+
+
+def test_cimento_nao_consome_areia_em_kg_sem_bitola() -> None:
+    """Sem bitola, a unidade não identifica o material: a categoria da descrição decide."""
+    resultado = correlacionar(
+        linhas=[linha("A", linha_no=1, qtd=28, un="SACO", bitola=None, categoria="cimento")],
+        itens=[item(n=1, qtd=1400, un="KG", bitola=None, descricao="AREIA MEDIA LAVADA")],
+    )
+    assert resultado.atribuicoes == []
+    assert len(resultado.linhas_sem_fatura) == 1
 
 
 # ---------------------------------------------------------------------------
@@ -305,3 +347,14 @@ def test_item_sem_quantidade_nao_e_atribuido_mas_fica_visivel() -> None:
     )
     assert resultado.atribuicoes == []
     assert resultado.faturados_sem_pedido[0]["quantidade"] == 0
+
+
+def test_consumo_de_aco_em_kg_e_registrado_em_metros_nao_em_kg() -> None:
+    """Regressão: o saldo era kg cru, e a soma faturada misturava kg com metros."""
+    resultado = correlacionar(
+        linhas=[linha("A", linha_no=1, qtd=161.7, un="M", bitola=10.0)],
+        itens=[item(n=1, qtd=100.0, un="KG", bitola=10.0)],
+    )
+    consumido = resultado.atribuicoes[0].quantidade_consumida_base
+    assert consumido == pytest.approx(162.0, rel=0.01)  # 100 kg ≈ 162 m a 10 mm
+    assert resultado.atribuicoes[0].quantidade_faturada == 100.0  # a unidade crua continua visível

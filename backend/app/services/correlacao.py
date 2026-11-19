@@ -39,6 +39,8 @@ from dataclasses import dataclass, field
 from typing import Any, Iterable
 
 from app.domain.conferente import converter_para_metros
+from app.services.material_categoria import detectar_categoria_material
+from app.services.quantidade_material import converter_quantidade_recebida
 
 # ---------------------------------------------------------------------------
 # Normalização de unidades
@@ -91,12 +93,18 @@ def chave_base(quantidade: Any, unidade: Any, bitola_mm: Any, metros_por_barra: 
             mpb = metros_por_barra or METROS_POR_BARRA_PADRAO
             return ("m", q * float(mpb))
         return ("un", q)
-    if u in _SACO:
-        return ("saco", q)
+    # Saco e tonelada descrevem massa: convergem para kg pela mesma conversão
+    # usada na conferência (1 saco = 50 kg, 1 t = 1000 kg). Sem isso, 28 sacos
+    # pedidos e 1400 kg faturados viravam "unidades incompatíveis" e iam para
+    # revisão, mesmo sendo a mesma carga.
+    if u in _SACO or u in _TON:
+        conv = converter_quantidade_recebida(q, u, "kg")
+        if conv.comparavel:
+            return ("kg", conv.recebida)
+    # m³ fica numa base própria de propósito: a conversão m³ ↔ kg depende da
+    # densidade do material, e a correlação não conhece o material do item.
     if u in _M3:
         return ("m3", q)
-    if u in _TON:
-        return ("ton", q)
     if not u:
         return None
     return (u.lower(), q)
@@ -278,6 +286,19 @@ def _compativel_por_atributo(linha: LinhaPedido, item: ItemFaturado) -> bool:
         return False
     if linha.base[0] != item.base[0]:
         return False
+    # Sem bitola, a unidade sozinha não diz qual material é. Com a conversão de
+    # sacos e toneladas para kg, uma linha de cimento poderia consumir qualquer
+    # item em kg (areia, por exemplo). Só casa se a descrição do item não
+    # contradiz a categoria da linha; descrição ausente ou desconhecida não bloqueia.
+    if linha.bitola_mm is None and item.bitola_mm is None:
+        cat_item = detectar_categoria_material(item.descricao)
+        if normalizar_unidade(linha.unidade) in _SACO | _TON:
+            # Saco e tonelada só existem para cimento neste fluxo: exige a
+            # categoria do item explicitamente igual à da linha.
+            if cat_item != linha.categoria_material:
+                return False
+        elif cat_item != "desconhecido" and cat_item != linha.categoria_material:
+            return False
     if linha.bitola_mm is not None and item.bitola_mm is not None:
         return abs(float(linha.bitola_mm) - float(item.bitola_mm)) <= 0.5
     return linha.bitola_mm is None and item.bitola_mm is None
@@ -308,7 +329,10 @@ def correlacionar(
     por_ref = {i.referencia: i for i in itens}
     linha_por_id = {l.pedido_item_id: l for l in linhas}
 
-    saldo = {i.referencia: (float(i.quantidade) if i.quantidade is not None else 0.0) for i in itens}
+    # O saldo é mantido na BASE comparável (ex.: metros para aço com bitola,
+    # kg para cimento). Mantê-lo na unidade crua da NF misturava kg com metros
+    # na soma faturada.
+    saldo = {i.referencia: _saldo_inicial(i) for i in itens}
     sem_quantidade = {i.referencia for i in itens if i.quantidade is None or float(i.quantidade) <= 0}
     for ref in sem_quantidade:
         saldo[ref] = 0.0
@@ -490,6 +514,13 @@ def correlacionar(
         linhas_sem_fatura=linhas_sem_fatura,
         faturados_sem_pedido=faturados_sem_pedido,
     )
+
+
+def _saldo_inicial(item: "ItemFaturado") -> float:
+    if item.quantidade is None or float(item.quantidade) <= 0:
+        return 0.0
+    base = item.base
+    return float(base[1]) if base else float(item.quantidade)
 
 
 def _resumo_item(item: ItemFaturado, saldo_atual: float) -> dict[str, Any]:

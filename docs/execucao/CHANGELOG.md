@@ -8,6 +8,30 @@ O projeto **não segue versionamento semântico ainda** — não há tag nem rel
 
 ---
 
+## [Não lançado] — 2026-11-19 — correlação: unidades no motor pedido × NF-e
+
+### Corrigido
+
+- **Bug pré-existente:** `correlacionar` registrava `quantidade_consumida_base` e mantinha o saldo na unidade
+  crua da NF (kg, t) e não na base comparável (m, kg). A soma `faturada` de `pedidos.py` misturava kg com
+  metros para aço com bitola.
+
+### Alterado
+
+- `correlacao.chave_base`: sacos e toneladas agora convergem para `kg` (1 saco = 50 kg, 1 t = 1000 kg),
+  pela mesma `converter_quantidade_recebida` da conferência. Antes `SACO` virava base `saco`, incomparável
+  com `kg`, e a linha ia para revisão. **Efeito visível:** o nome da base em relatórios de pedido em sacos
+  passa de `saco` para `kg`.
+- Sem bitola, linha em sacos/toneladas só casa com item cuja categoria detectada é a mesma da linha
+  (evita que cimento consuma areia em kg). Descrição sem categoria conhecida não casa nesse caminho.
+- m³ continua em base própria: a conversão depende da densidade do material.
+
+### Testes
+
+- `tests/test_correlacao.py`: 6 novos + 1 de regressão do saldo; 2 ajustados (`SACO` agora `kg`; fixture de
+  cimento com descrição de cimento). Suíte unitária: **265 passam**, 0 falham.
+- **Não verificado:** `tests/integration` (Docker Desktop parado nesta sessão; a suíte pulou 176 testes).
+
 ## [Não lançado] — 2026-11-18 — P-10: unidades na conferência de cimento e bloco
 
 ### Corrigido
