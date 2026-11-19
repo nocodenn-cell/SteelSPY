@@ -31,9 +31,9 @@ O projeto **não segue versionamento semântico ainda** — não há tag nem rel
 
 - `quantidade_recebida_em_metros` aceita `TON`, `PC/PCS/PCT`, `MT/M1`, caixa baixa e `metros_por_barra` nulo (antes gerava erro genérico). Unidade desconhecida continua AMARELO. +5 testes; suíte: **260 passam**.
 
-### Não verificado
+### Verificação de integração
 
-- `backend/tests/integration` (exige PostgreSQL) não foi executada nesta sessão.
+- `backend/tests/integration` executada contra PostgreSQL 16 (`stellspy-pg`, porta 55432): **176 passam, 0 pulados**. Suíte completa: 436 passam, 0 pulados.
 
 ## [Não lançado] — 2026-11-03 — P-18: estabilização de dependências
 
