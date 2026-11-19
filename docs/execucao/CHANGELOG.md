@@ -30,7 +30,7 @@ O projeto **não segue versionamento semântico ainda** — não há tag nem rel
 
 - `tests/test_correlacao.py`: 6 novos + 1 de regressão do saldo; 2 ajustados (`SACO` agora `kg`; fixture de
   cimento com descrição de cimento). Suíte unitária: **265 passam**, 0 falham.
-- **Não verificado:** `tests/integration` (Docker Desktop parado nesta sessão; a suíte pulou 176 testes).
+- `tests/integration` executada contra PostgreSQL 16 após iniciar o Docker Desktop: **176 passam**. Suíte completa: **441 passam, 0 pulados**.
 
 ## [Não lançado] — 2026-11-18 — P-10: unidades na conferência de cimento e bloco
 
