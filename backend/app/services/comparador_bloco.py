@@ -8,6 +8,8 @@ from __future__ import annotations
 
 from typing import Any, Tuple
 
+from app.services.quantidade_material import converter_quantidade_recebida, normalizar_dimensoes
+
 VERDE = "VERDE"
 AMARELO = "AMARELO"
 VERMELHO = "VERMELHO"
@@ -31,7 +33,8 @@ def classificar_item_bloco(
 
     dims_esp = (attrs.get("dimensoes") or "").strip()
     dims_rec = (item_recebido.get("dimensoes") or "").strip()
-    if dims_esp and dims_rec and dims_esp.upper() != dims_rec.upper():
+    # "19 x 19 x 39 cm" e "19x19x39" são o mesmo bloco: compara pelos números.
+    if dims_esp and dims_rec and normalizar_dimensoes(dims_esp) != normalizar_dimensoes(dims_rec):
         return (
             VERMELHO,
             f"DIMENSÕES DIVERGENTES: especificado {dims_esp}, NF {dims_rec}.",
@@ -73,22 +76,27 @@ def classificar_item_bloco(
     except (TypeError, ValueError):
         qe = 0.0
 
-    try:
-        qr = float(item_recebido.get("quantidade", 0))
-    except (TypeError, ValueError):
-        qr = 0.0
+    un_rec = item_recebido.get("unidade_original") or item_recebido.get("unidade")
+    un_prev = especificacao.get("unidade_prevista") or attrs.get("unidade_prevista")
+    conv = converter_quantidade_recebida(item_recebido.get("quantidade", 0), un_rec, un_prev)
+    qr = conv.recebida
 
     if qe > 0:
+        if not conv.comparavel:
+            return (
+                AMARELO,
+                f"Quantidade: não comparável — {conv.nota} Conferir manualmente.",
+            )
         delta_pct = abs(qr - qe) / qe
         if delta_pct > 0.10:
             return (
                 VERMELHO,
-                f"QUANTIDADE: divergência {delta_pct * 100:.1f}% (>10%).",
+                f"Quantidade: divergência {delta_pct * 100:.1f}% (>10%).",
             )
         if delta_pct >= 0.02:
             return (
                 AMARELO,
-                f"QUANTIDADE: divergência {delta_pct * 100:.1f}% (faixa 2–10%).",
+                f"Quantidade: divergência {delta_pct * 100:.1f}% (faixa 2–10%).",
             )
 
     rotulo_dim = dims_esp or dims_rec or "bloco"

@@ -125,7 +125,7 @@ Ordem por risco decrescente. Todas exigem P-05/P-06 prontos.
 | P-07 | A1 — SSRF via redirect em `foto_url` | `follow_redirects=False` + revalidar host por hop | redirect para IP privado é bloqueado | 2 h | `PLANEJADO` |
 | P-08 | A4 — idempotência ignora `tipo` | incluir `tipo` na chave; devolução vira nova conferência | devolução da mesma chave retorna `tipo=devolucao` | 4 h | `PLANEJADO` |
 | P-09 | A3 — override inconsistente | separar `status_calculado`/`status_efetivo`; propagar para `nfe_itens` | após override, leitura devolve estado coerente | 1 dia | `PLANEJADO` |
-| P-10 | A5 — cimento/bloco sem normalização de unidade | usar `normalizacao_materiais` antes de comparar | 28 sacos × 1 m³ → VERDE, não VERMELHO | 1 dia | `PLANEJADO` |
+| P-10 | A5 — cimento/bloco sem normalização de unidade | normalizar unidade antes de comparar | 28 sacos × 1 m³ → VERDE, não VERMELHO | 1 dia | ✅ `IMPLEMENTADO` + `TESTADO` (2026-11-18, `test_quantidade_material.py`) |
 | P-11 | A2 — `modo_aprendizado` default ON | default `FALSE` + migração sinalizando obras existentes | obra nova nasce bloqueando | 2 h | `PLANEJADO` |
 | P-12 | M1 — fila presa em `processando` | `try/finally` por item + reaper por `claimed_em` | linha órfã volta a `pendente` | 4 h | `PLANEJADO` |
 | P-13 | D-FP — `fpdf2` `ln=`/`dest=` | migrar para `new_x`/`new_y` e `pdf.output()` | 0 warnings de deprecação | 3 h | `PLANEJADO` |

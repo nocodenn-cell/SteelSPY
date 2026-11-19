@@ -9,6 +9,8 @@ from __future__ import annotations
 from datetime import date, datetime, timezone
 from typing import Any, Tuple
 
+from app.services.quantidade_material import converter_quantidade_recebida
+
 # Status alinhados a `app.domain.conferente.StatusConferencia`
 VERDE = "VERDE"
 AMARELO = "AMARELO"
@@ -111,23 +113,30 @@ def classificar_item_cimento(
     except (TypeError, ValueError):
         qe = 0.0
 
-    try:
-        qr = float(item_recebido.get("quantidade", 0))
-    except (TypeError, ValueError):
-        qr = 0.0
+    un_rec = item_recebido.get("unidade_original") or item_recebido.get("unidade")
+    un_prev = especificacao.get("unidade_prevista") or _attrs(especificacao).get("unidade_prevista")
+    conv = converter_quantidade_recebida(item_recebido.get("quantidade", 0), un_rec, un_prev)
+    qr = conv.recebida
 
     if qe > 0:
+        if not conv.comparavel:
+            return (
+                AMARELO,
+                f"Quantidade: não comparável — {conv.nota} Conferir manualmente.",
+            )
         delta_pct = abs(qr - qe) / qe
+        evidencia = f" {conv.nota}" if conv.nota else ""
         if delta_pct > 0.10:
             return (
                 VERMELHO,
-                f"QUANTIDADE: divergência {delta_pct * 100:.1f}% (>10%).",
+                f"Quantidade: divergência {delta_pct * 100:.1f}% (>10%).{evidencia}",
             )
         if delta_pct >= 0.02:
             return (
                 AMARELO,
-                f"QUANTIDADE: divergência {delta_pct * 100:.1f}% (faixa 2–10%).",
+                f"Quantidade: divergência {delta_pct * 100:.1f}% (faixa 2–10%).{evidencia}",
             )
 
     rotulo_tipo = tipo_esp or tipo_rec or "cimento"
-    return VERDE, f"OK — {qr:g} ({item_recebido.get('unidade') or 'un'}) {rotulo_tipo}."
+    sufixo = f" {conv.nota}" if conv.nota else ""
+    return VERDE, f"OK — {qr:g} ({conv.unidade or item_recebido.get('unidade') or 'un'}) {rotulo_tipo}.{sufixo}"

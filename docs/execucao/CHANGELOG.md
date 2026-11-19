@@ -8,6 +8,29 @@ O projeto **não segue versionamento semântico ainda** — não há tag nem rel
 
 ---
 
+## [Não lançado] — 2026-11-18 — P-10: unidades na conferência de cimento e bloco
+
+### Corrigido
+
+- `comparador_cimento` / `comparador_bloco` comparavam `quantidade` da NF com `quantidade_prevista`
+  **sem considerar a unidade** (28 sacos × previsto 1 m³ = "2700% VERMELHO"). Agora a quantidade da NF é
+  convertida para `unidade_prevista` (sacos ↔ kg ↔ m³ ↔ t; milheiro → un) e a conversão aparece na
+  mensagem como evidência.
+- Par de unidades sem conversão segura → **AMARELO "não comparável"**, nunca um percentual inventado.
+- Mensagens `QUANTIDADE:` em caixa alta escapavam de `divergencias_from_motivos` e de
+  `_atualizar_alerta_por_motivos`; padronizadas em `Quantidade:`. Divergência de cimento passa a gerar a
+  tag `quantidade` e o alerta `QUANTIDADE_DIVERGENTE` (antes caía em `DIVERGENCIAS_MULTIPLAS`).
+- Dimensões de bloco comparadas pelos números (`19 x 19 x 39 cm` == `19x19x39`).
+
+### Adicionado
+
+- `backend/app/services/quantidade_material.py` (reusa `normalizar_cimento`; sem dependência nova).
+- `backend/tests/test_quantidade_material.py` — 13 testes. Suíte unitária: 242 → **255 passam**.
+
+### Não verificado
+
+- `backend/tests/integration` (exige PostgreSQL) não foi executada nesta sessão.
+
 ## [Não lançado] — 2026-11-03 — P-18: estabilização de dependências
 
 ### Adicionado
