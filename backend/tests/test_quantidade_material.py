@@ -109,3 +109,36 @@ def test_nf_em_kg_contra_previsto_em_sacos_fim_a_fim_verde():
     ]
     r = conferir_nf_multiplos_itens(itens, espec, ConfigObraConferente(modo_aprendizado=False))
     assert r["status"] == StatusConferencia.VERDE.value
+
+
+# --- aço: normalização de unidade (extensão do P-10) -------------------------
+from app.domain.conferente import analisar_divergencia, quantidade_recebida_em_metros
+
+
+def _aco(q, un, **kw):
+    return {"quantidade": q, "unidade": un, "bitola_mm": 10.0, **kw}
+
+
+def test_aco_toneladas_viram_metros():
+    # 10 mm = 100/162 kg/m  ->  1 t = 1620 m
+    assert quantidade_recebida_em_metros(_aco(1, "TON")) == pytest.approx(1620.0)
+
+
+def test_aco_unidade_pc_e_metros_por_barra_nulo_usam_padrao():
+    assert quantidade_recebida_em_metros(_aco(10, "PC", metros_por_barra=None)) == 120.0
+    assert quantidade_recebida_em_metros(_aco(10, "pcs")) == 120.0
+
+
+def test_aco_unidade_em_minusculo_e_alias_de_metro():
+    assert quantidade_recebida_em_metros(_aco(50, "mt")) == 50.0
+
+
+def test_aco_unidade_desconhecida_continua_levantando():
+    with pytest.raises(ValueError):
+        quantidade_recebida_em_metros(_aco(5, "LATA"))
+
+
+def test_aco_nf_em_toneladas_confere_contra_metros_planejados():
+    esp = {"bitola_mm": 10.0, "qtd_planejada_metros": 1620.0}
+    st, _, _ = analisar_divergencia(_aco(1, "TON"), esp, ConfigObraConferente(modo_aprendizado=False), bitola_ja_casada=True)
+    assert st == StatusConferencia.VERDE

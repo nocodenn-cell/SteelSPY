@@ -327,17 +327,26 @@ class ConfigObraConferente:
     modo_aprendizado: bool = True
 
 
-def quantidade_recebida_em_metros(item_xml: dict[str, Any]) -> float:
-    q = float(item_xml["quantidade"])
-    unidade = str(item_xml.get("unidade", "KG")).upper()
-    bitola = float(item_xml["bitola_mm"])
+_UN_METROS = {"M", "METRO", "METROS", "ML", "MT", "M1"}
+_UN_QUILO = {"KG", "KGS", "KILO", "QUILO", "QUILOGRAMA", "QUILOGRAMAS"}
+_UN_TON = {"T", "TON", "TONELADA", "TONELADAS"}
+_UN_BARRA = {"BARRA", "BARRAS", "UN", "UND", "UNID", "UNIDADE", "PC", "PCS", "PCT", "PECA", "PECAS"}
 
-    if unidade in ("M", "METRO", "METROS", "ML"):
+
+def quantidade_recebida_em_metros(item_xml: dict[str, Any]) -> float:
+    """Converte a quantidade da NF para metros lineares (kg, t e barras exigem bitola)."""
+    q = float(item_xml["quantidade"])
+    unidade = str(item_xml.get("unidade") or "KG").strip().upper()
+
+    if unidade in _UN_METROS:
         return q
-    if unidade in ("KG", "KILO", "QUILOGRAMA", "QUILOGRAMAS"):
+    bitola = float(item_xml["bitola_mm"])
+    if unidade in _UN_QUILO:
         return converter_para_metros(q, bitola)
-    if unidade in ("BARRA", "BARRAS", "UN", "UNID", "UNIDADE"):
-        metros_barra = float(item_xml.get("metros_por_barra", 12.0))
+    if unidade in _UN_TON:
+        return converter_para_metros(q * 1000.0, bitola)
+    if unidade in _UN_BARRA:
+        metros_barra = float(item_xml.get("metros_por_barra") or 12.0)
         return q * metros_barra
     raise ValueError(f"Unidade não suportada: {unidade}")
 

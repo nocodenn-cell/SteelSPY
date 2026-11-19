@@ -27,6 +27,10 @@ O projeto **não segue versionamento semântico ainda** — não há tag nem rel
 - `backend/app/services/quantidade_material.py` (reusa `normalizar_cimento`; sem dependência nova).
 - `backend/tests/test_quantidade_material.py` — 13 testes. Suíte unitária: 242 → **255 passam**.
 
+### Aço (mesma entrega)
+
+- `quantidade_recebida_em_metros` aceita `TON`, `PC/PCS/PCT`, `MT/M1`, caixa baixa e `metros_por_barra` nulo (antes gerava erro genérico). Unidade desconhecida continua AMARELO. +5 testes; suíte: **260 passam**.
+
 ### Não verificado
 
 - `backend/tests/integration` (exige PostgreSQL) não foi executada nesta sessão.
