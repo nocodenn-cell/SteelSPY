@@ -7,7 +7,7 @@
 
 ## P1 — Falta para lançar (MVP)
 
-- P-11 (A2): `modo_aprendizado` nasce ligado por padrão e rebaixa VERMELHO para AMARELO; obra nova deveria nascer bloqueando (`docs/execucao/PROXIMOS_PASSOS.md`)
+- Obras existentes com `modo_aprendizado = TRUE` continuam rebaixando VERMELHO para AMARELO: a migração 20261103150300 não as alterou de propósito. Decidir caso a caso ou em lote (alteração de dados em produção, exige autorização)
 
 ## P2 — Melhoria
 
@@ -18,6 +18,7 @@
 
 ## Feito
 
+- 2026-11-21 — P-11 (padrão do modo de aprendizado): o padrão do código (`ConfigObraConferente` e fallback) passa a `FALSE`, igual ao padrão do banco da migração 20261103150300. Obras existentes não são alteradas. Suíte: 494 passam, 0 pulados
 - 2026-11-21 — CSV semanal ganha a coluna `itens_vermelhos_aceitos` ao fim (colunas anteriores mantêm a posição). Vazia quando a NF nunca foi aceita por override. Suíte: 493 passam, 0 pulados
 - 2026-11-21 — Fila de retentativa com `tipo`: `fila_nfe` passa a ser única por (obra, chave, tipo); `fila_reivindicar_lote` devolve `tipo`; o worker completa a conferência certa (devolução não toca na entrada pendente). Migração `20261121140000`, não aplicada em produção. Suíte: 491 passam, 0 pulados. Mutação (callback sempre `entrada`) fez o teste falhar
 - 2026-11-21 — P-09 (override inconsistente): o aceite marca `nfe_itens.override_aplicado` (o `status_item` técnico continua VERMELHO); `itens_resumo` passa a bater com VERDE, guardando a contagem anterior em `vermelhos_aceitos`; o dashboard projeta VERDE para item aceito; o replay de `/conferir` devolve `status` efetivo, `status_tecnico` e `override`. Migração `20261121130000`, não aplicada em produção. Suíte: 489 passam, 0 pulados. Mutação (sem marcar itens) fez o teste falhar

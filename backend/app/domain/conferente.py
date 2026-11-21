@@ -324,7 +324,8 @@ def _atualizar_alerta_por_motivos(alerta_atual: TipoAlerta, motivos: list[str]) 
 class ConfigObraConferente:
     aceita_similar: bool = False
     margem_tolerancia_float: float = 0.02
-    modo_aprendizado: bool = True
+    # Padrão igual ao da coluna obras.modo_aprendizado (migração 20261103150300): FALSE.
+    modo_aprendizado: bool = False
 
 
 _UN_METROS = {"M", "METRO", "METROS", "ML", "MT", "M1"}
@@ -358,7 +359,7 @@ def _config_conferente(config_obra: ConfigObraConferente | dict[str, Any]) -> Co
     return ConfigObraConferente(
         aceita_similar=bool(d.get("aceita_similar", False)),
         margem_tolerancia_float=float(d.get("margem_tolerancia_float", 0.02)),
-        modo_aprendizado=bool(d.get("modo_aprendizado", True)),
+        modo_aprendizado=bool(d.get("modo_aprendizado", False)),
     )
 
 

@@ -8,6 +8,23 @@ O projeto **não segue versionamento semântico ainda** — não há tag nem rel
 
 ---
 
+## [Não lançado] — 2026-11-21 — P-11: padrão do modo de aprendizado no código
+
+### Alterado
+
+- `app/domain/conferente.py`: `ConfigObraConferente.modo_aprendizado` e o fallback de `_config_conferente`
+  passam de `True` para `False`, igual ao padrão da coluna `obras.modo_aprendizado` (migração
+  `20261103150300`). Só afeta chamadas que não informam o campo. Obras existentes lidas do banco não mudam.
+
+### Testes
+
+- `tests/test_aprendizado.py::test_padrao_do_modo_aprendizado_e_desligado_como_no_banco`.
+- Suíte completa com PostgreSQL: **494 passam, 0 pulados**.
+
+### Não alterado
+
+- Obras já existentes com `modo_aprendizado = TRUE` (a migração as deixou assim de propósito).
+
 ## [Não lançado] — 2026-11-21 — CSV semanal com `itens_vermelhos_aceitos`
 
 ### Adicionado
