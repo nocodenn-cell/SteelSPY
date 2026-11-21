@@ -110,6 +110,16 @@ class LinhaRelatorio:
     itens_verdes: int | None
     itens_amarelos: int | None
     itens_vermelhos: int | None
+    # Vermelhos que um responsável aceitou por override. Ficam fora de
+    # itens_vermelhos, que passa a bater com o status VERDE da NF aceita.
+    itens_vermelhos_aceitos: int | None = None
+
+
+def _vermelhos_aceitos(itens_resumo: Any) -> int | None:
+    """Contagem de vermelhos aceitos por override. None quando a NF nunca foi aceita."""
+    if not isinstance(itens_resumo, dict) or "vermelhos_aceitos" not in itens_resumo:
+        return None
+    return _int_jsonb(itens_resumo.get("vermelhos_aceitos"))
 
 
 def listar_logs_periodo_obra(
@@ -183,6 +193,7 @@ def listar_logs_periodo_obra(
                 itens_verdes=_int_jsonb(ir.get("verdes")),
                 itens_amarelos=_int_jsonb(ir.get("amarelos")),
                 itens_vermelhos=_int_jsonb(ir.get("vermelhos")),
+                itens_vermelhos_aceitos=_vermelhos_aceitos(ir),
             )
         )
     return out
@@ -222,6 +233,8 @@ def montar_csv_bytes(linhas: list[LinhaRelatorio]) -> bytes:
             "itens_verdes",
             "itens_amarelos",
             "itens_vermelhos",
+            # Acrescentada no fim: as colunas anteriores mantêm a posição.
+            "itens_vermelhos_aceitos",
         ]
     )
     for ln in linhas:
@@ -245,6 +258,7 @@ def montar_csv_bytes(linhas: list[LinhaRelatorio]) -> bytes:
                 ln.itens_verdes if ln.itens_verdes is not None else "",
                 ln.itens_amarelos if ln.itens_amarelos is not None else "",
                 ln.itens_vermelhos if ln.itens_vermelhos is not None else "",
+                ln.itens_vermelhos_aceitos if ln.itens_vermelhos_aceitos is not None else "",
             ]
         )
     raw = buf.getvalue().encode("utf-8-sig")

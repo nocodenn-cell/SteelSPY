@@ -8,7 +8,20 @@ O projeto **não segue versionamento semântico ainda** — não há tag nem rel
 
 ---
 
-## [Não lançado] — 2026-11-21 — fila de retentativa com `tipo`
+## [Não lançado] — 2026-11-21 — CSV semanal com `itens_vermelhos_aceitos`
+
+### Adicionado
+
+- `relatorio_semanal.montar_csv_bytes`: coluna `itens_vermelhos_aceitos` no fim do arquivo, lida de
+  `itens_resumo.vermelhos_aceitos` (gravado pelo override de P-09). Fica vazia quando a NF nunca foi aceita.
+- As colunas anteriores mantêm a posição, então quem lê o arquivo por índice não quebra.
+
+### Testes
+
+- `tests/test_relatorio_semanal.py`: 2 testes novos (cabeçalho e valores; campo vazio sem aceite).
+- Suíte completa com PostgreSQL: **493 passam, 0 pulados**.
+
+## [Não lançado] — 2026-11-21 — fila de retentativa com `tipo]
 
 ### Corrigido
 

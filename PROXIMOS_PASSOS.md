@@ -14,11 +14,11 @@
 - Fatores de conversão de cimento (28 sacos/m³, 1400 kg/m³) estão como constantes em `normalizacao_cimento.py`; ler da tabela `normalizacao_materiais` por obra/fornecedor
 - Sem equivalência para `m²`, `L` e `lata` (tinta, argamassa): hoje ficam "não comparável" e vão para conferência manual
 - Limiar de tolerância de quantidade de cimento/bloco (2% e 10%) está duplicado nos dois comparadores; centralizar
-- Relatório semanal (CSV) ainda não expõe `vermelhos_aceitos`: o total de vermelhos aparece zerado para NF aceita por override
 - P-12 fila presa em `processando`, P-13 deprecações do `fpdf2` (55 warnings na suíte), P-17 erro de banco 500→503, P-03 gate de licença
 
 ## Feito
 
+- 2026-11-21 — CSV semanal ganha a coluna `itens_vermelhos_aceitos` ao fim (colunas anteriores mantêm a posição). Vazia quando a NF nunca foi aceita por override. Suíte: 493 passam, 0 pulados
 - 2026-11-21 — Fila de retentativa com `tipo`: `fila_nfe` passa a ser única por (obra, chave, tipo); `fila_reivindicar_lote` devolve `tipo`; o worker completa a conferência certa (devolução não toca na entrada pendente). Migração `20261121140000`, não aplicada em produção. Suíte: 491 passam, 0 pulados. Mutação (callback sempre `entrada`) fez o teste falhar
 - 2026-11-21 — P-09 (override inconsistente): o aceite marca `nfe_itens.override_aplicado` (o `status_item` técnico continua VERMELHO); `itens_resumo` passa a bater com VERDE, guardando a contagem anterior em `vermelhos_aceitos`; o dashboard projeta VERDE para item aceito; o replay de `/conferir` devolve `status` efetivo, `status_tecnico` e `override`. Migração `20261121130000`, não aplicada em produção. Suíte: 489 passam, 0 pulados. Mutação (sem marcar itens) fez o teste falhar
 - 2026-11-21 — P-08 (idempotência ignora `tipo`): a unicidade de `nfe_logs` passa a ser `(obra_id, chave_acesso, tipo)`. A busca de idempotência de `/conferir` filtra por `tipo`, então devolução com a mesma chave da entrada vira conferência própria e a entrada não é mais sobrescrita. Migração `20261121120000` (não aplicada em produção). Suíte: 488 passam, 0 pulados. Mutação (sem o filtro por `tipo`) fez 2 testes falharem
