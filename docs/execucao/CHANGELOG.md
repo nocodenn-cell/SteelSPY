@@ -21,7 +21,7 @@ O projeto **não segue versionamento semântico ainda** — não há tag nem rel
 - `tests/test_relatorio_semanal.py`: 2 testes novos (cabeçalho e valores; campo vazio sem aceite).
 - Suíte completa com PostgreSQL: **493 passam, 0 pulados**.
 
-## [Não lançado] — 2026-11-21 — fila de retentativa com `tipo]
+## [Não lançado] — 2026-11-21 — fila de retentativa com `tipo`
 
 ### Corrigido
 
