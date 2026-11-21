@@ -44,13 +44,17 @@ DIR_MIGRACOES = RAIZ_BACKEND.parent / "supabase" / "migrations"
 SENHA_APP = os.getenv("STELLSPY_APP_PASSWORD", "dev-local-app-password")
 os.environ.setdefault("STELLSPY_APP_PASSWORD", SENHA_APP)
 
+# 127.0.0.1 e não `localhost`: no Windows, `localhost` resolve primeiro para ::1 e
+# cada conexão nova espera ~21 s de timeout IPv6 antes de cair para IPv4 (medido
+# em 2026-11-21 contra o container stellspy-pg-revalidacao). A suíte abre dezenas
+# de conexões, então esse atraso virava o "travamento" de minutos observado.
 URL_OWNER = os.getenv(
     "STELLSPY_TEST_DB_OWNER",
-    "postgresql+psycopg2://stellspy_owner:stellspy_dev@localhost:55432/stellspy",
+    "postgresql+psycopg2://stellspy_owner:stellspy_dev@127.0.0.1:55432/stellspy",
 )
 URL_APP = os.getenv(
     "STELLSPY_TEST_DB_APP",
-    f"postgresql+psycopg2://stellspy_app:{SENHA_APP}@localhost:55432/stellspy",
+    f"postgresql+psycopg2://stellspy_app:{SENHA_APP}@127.0.0.1:55432/stellspy",
 )
 
 
