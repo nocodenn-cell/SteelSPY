@@ -8,6 +8,37 @@ O projeto **não segue versionamento semântico ainda** — não há tag nem rel
 
 ---
 
+## [Não lançado] — 2026-11-21 — P-08: idempotência de conferência considera `tipo`
+
+### Corrigido
+
+- `POST /conferir` buscava a conferência existente só por `(obra, chave)`. Uma devolução com a mesma chave da
+  entrada recebia o snapshot da entrada e nunca era registrada (A4 de `ANALISE_PROJETO.md`).
+- Além disso, o `ON CONFLICT (obra_id, chave_acesso)` faria a devolução **sobrescrever** a entrada, trocando
+  `tipo` para `devolucao`.
+
+### Alterado
+
+- `supabase/migrations/20261121120000_nfe_logs_unique_tipo.sql`: troca `UNIQUE (obra_id, chave_acesso)` por
+  `UNIQUE (obra_id, chave_acesso, tipo)` em `nfe_logs`. A restrição nova é implicada pela antiga, então
+  nenhuma linha existente a viola. Não foi aplicada em produção.
+- `app/routers/conferencia.py` e `app/services/conferencia_persist.py`: busca de idempotência e `ON CONFLICT`
+  usam `tipo`.
+- `aplicar_xml_disponivel_fila` prefere a linha `PENDENTE` quando há entrada e devolução com a mesma chave.
+
+### Limitação conhecida
+
+- `fila_nfe` continua com `UNIQUE (obra_id, chave_acesso)` e não guarda `tipo`. Retentativa de devolução com a
+  mesma chave de uma entrada pendente ainda compartilha a linha da fila. O caminho síncrono (XML disponível)
+  está corrigido. Para a fila, `fila_reivindicar_lote` precisa devolver `tipo`.
+
+### Testes
+
+- `tests/integration/test_idempotencia_tipo.py` — 4 testes: devolução vira conferência própria, entrada repetida
+  segue idempotente, devolução repetida devolve a própria conferência e o banco recusa duas entradas iguais.
+- Mutação (busca sem `tipo`): 2 testes falharam. Revertida.
+- Suíte completa com PostgreSQL: **488 passam, 0 pulados**.
+
 ## [Não lançado] — 2026-11-21 — P-07: SSRF em foto_url via redirect e DNS
 
 ### Corrigido

@@ -97,7 +97,7 @@ def gravar_conferencia_com_xml(
                 :tenant, :chave, :obra, :status, CAST(:xml AS jsonb), :foto,
                 :resumo_g, CAST(:itens_res AS jsonb), :tipo, :nf_orig
             )
-            ON CONFLICT (obra_id, chave_acesso) DO UPDATE SET
+            ON CONFLICT (obra_id, chave_acesso, tipo) DO UPDATE SET
                 status_conferencia = EXCLUDED.status_conferencia,
                 xml_data = EXCLUDED.xml_data,
                 processado_em = NOW(),
@@ -149,6 +149,10 @@ def aplicar_xml_disponivel_fila(
             SELECT foto_url, tipo, nf_original_id
             FROM nfe_logs
             WHERE obra_id = :obra AND chave_acesso = :chave
+            -- Com entrada e devolução na mesma chave há duas linhas. A fila só
+            -- representa a conferência ainda pendente, então ela tem prioridade.
+            ORDER BY (status_conferencia = 'PENDENTE') DESC, processado_em DESC
+            LIMIT 1
         """),
         {"obra": str(obra_id), "chave": chave_acesso},
     ).mappings().first()

@@ -213,9 +213,9 @@ def post_conferir(
         text("""
             SELECT id, status_conferencia, xml_data
             FROM nfe_logs
-            WHERE obra_id = :obra AND chave_acesso = :chave
+            WHERE obra_id = :obra AND chave_acesso = :chave AND tipo = :tipo
         """),
-        {"obra": str(body.obra_id), "chave": chave},
+        {"obra": str(body.obra_id), "chave": chave, "tipo": body.tipo},
     ).mappings().first()
 
     config = ConfigObraConferente(
@@ -250,7 +250,7 @@ def post_conferir(
                     tenant_id, chave_acesso, obra_id, status_conferencia, xml_data, foto_url, tipo, nf_original_id
                 )
                 VALUES (:tenant, :chave, :obra, 'PENDENTE', NULL, :foto, :tipo, :nf_orig)
-                ON CONFLICT (obra_id, chave_acesso) DO UPDATE SET
+                ON CONFLICT (obra_id, chave_acesso, tipo) DO UPDATE SET
                     status_conferencia = 'PENDENTE',
                     processado_em = NOW(),
                     foto_url = COALESCE(EXCLUDED.foto_url, nfe_logs.foto_url),
