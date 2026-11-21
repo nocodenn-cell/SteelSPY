@@ -12,7 +12,7 @@
   - Pronto: `docs/execucao/AUDITORIA_MODO_APRENDIZADO.sql`, somente leitura (`SET TRANSACTION READ ONLY`, termina em `ROLLBACK`), com 4 blocos: contagem de obras; por obra (conferências, rebaixadas, abertas, overrides); divergências não resolvidas por tipo; impacto nos últimos 90 dias. Não foi executado: a validação de sintaxe falhou por indisponibilidade do banco de teste.
   - Para desbloquear: rodar o script num usuário somente leitura no banco de produção e enviar a saída (ou os CSVs). Sem isso, nenhum número é conhecido.
   - Análise de risco, sem dados ainda:
-    - Manter TRUE: NFs técnicamente VERMELHAS entram como AMARELO e a entrada não é bloqueada. Não há registro obrigatório de decisão humana para essas NFs, então material não conforme pode entrar sem responsável.
+    - Manter TRUE: NFs tecnicamente VERMELHAS entram como AMARELO e a entrada não é bloqueada. Não há registro obrigatório de decisão humana para essas NFs, então material não conforme pode entrar sem responsável.
     - Mudar para FALSE: em obra em implantação, o fiscal passa a ver muitos VERMELHOS e pode travar o fluxo. A mudança só vale para conferências novas; as antigas não mudam.
     - Não há coluna de prazo para o modo de aprendizado. Não dá para saber se uma obra o ligou de propósito e até quando.
   - Recomendação preliminar, em lote: obras sem nenhuma conferência podem passar a FALSE sem impacto histórico. Obras com conferências e rebaixamentos recentes precisam de decisão individual, com o responsável da obra. Não recomendo UPDATE em lote sem a saída do script.
