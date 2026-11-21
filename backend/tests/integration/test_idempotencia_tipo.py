@@ -167,3 +167,105 @@ def test_banco_recusa_segunda_entrada_com_mesma_chave_na_obra(
                 ),
                 {"t": cenario["tenant_a"], "k": preparo["chave"], "o": cenario["obra_a"]},
             )
+
+
+# ---------------------------------------------------------------------------
+# Fila de retentativa com `tipo`
+# ---------------------------------------------------------------------------
+
+
+def _limpar_chave(sql_owner: Any, obra: Any, chave: str) -> None:
+    with sql_owner.begin() as conn:
+        conn.execute(text("DELETE FROM fila_nfe WHERE obra_id = :o AND chave_acesso = :k"), {"o": obra, "k": chave})
+        conn.execute(text("DELETE FROM nfe_logs WHERE obra_id = :o AND chave_acesso = :k"), {"o": obra, "k": chave})
+
+
+def test_entrada_e_devolucao_com_mesma_chave_tem_linhas_proprias_na_fila(
+    sessao_app_factory: Any, sql_owner: Any, cenario: dict[str, Any]
+) -> None:
+    from app.services.fila_retentativa import enfileirar_apos_falha_xml
+    from app.tenant import vincular_sessao
+
+    chave = _chave_valida("5" * 43)
+    s = sessao_app_factory()
+    try:
+        vincular_sessao(s, cenario["tenant_a"])
+        for tipo in ("entrada", "devolucao"):
+            enfileirar_apos_falha_xml(
+                s, obra_id=cenario["obra_a"], chave_acesso=chave,
+                tenant_id=cenario["tenant_a"], tipo=tipo,
+            )
+    finally:
+        s.close()
+    try:
+        with sql_owner.connect() as conn:
+            tipos = sorted(
+                r[0] for r in conn.execute(
+                    text("SELECT tipo FROM fila_nfe WHERE obra_id = :o AND chave_acesso = :k"),
+                    {"o": cenario["obra_a"], "k": chave},
+                )
+            )
+        assert tipos == ["devolucao", "entrada"]
+    finally:
+        _limpar_chave(sql_owner, cenario["obra_a"], chave)
+
+
+def test_worker_completa_a_devolucao_e_nao_toca_na_entrada(
+    sessao_app_factory: Any, sql_owner: Any, cenario: dict[str, Any], monkeypatch: Any
+) -> None:
+    from app.services import conferencia_persist as persist
+    from app.services.fila_retentativa import processar_tick_fila
+
+    chave = _chave_valida("6" * 43)
+    entrada_id = uuid.uuid4()
+    devolucao_id = uuid.uuid4()
+    with sql_owner.begin() as conn:
+        for nid, tipo, nf_orig in (
+            (entrada_id, "entrada", None),
+            (devolucao_id, "devolucao", entrada_id),
+        ):
+            conn.execute(
+                text(
+                    "INSERT INTO nfe_logs (id, tenant_id, chave_acesso, obra_id, status_conferencia, "
+                    "tipo, nf_original_id) VALUES (:id, :t, :k, :o, 'PENDENTE', :tipo, :nf)"
+                ),
+                {"id": nid, "t": cenario["tenant_a"], "k": chave, "o": cenario["obra_a"],
+                 "tipo": tipo, "nf": nf_orig},
+            )
+        # a entrada fica para uma tentativa futura: só a devolução é processada agora
+        conn.execute(
+            text(
+                "INSERT INTO fila_nfe (tenant_id, obra_id, chave_acesso, tipo, proxima_tentativa, status) "
+                "VALUES (:t, :o, :k, 'entrada', NOW() + INTERVAL '1 day', 'pendente'), "
+                "(:t, :o, :k, 'devolucao', NOW() - INTERVAL '1 minute', 'pendente')"
+            ),
+            {"t": cenario["tenant_a"], "o": cenario["obra_a"], "k": chave},
+        )
+
+    monkeypatch.setattr(persist, "notificar_mensagem_fiscal", lambda *a, **k: None)
+    session = sessao_app_factory()
+    try:
+        resultados = processar_tick_fila(
+            session,
+            buscar_xml=lambda c: PAYLOAD_NF if c == chave else None,
+            ao_sucesso=persist.aplicar_xml_disponivel_fila,
+        )
+    finally:
+        session.close()
+
+    try:
+        assert any(r["chave_acesso"] == chave and r["resultado"] == "processado" for r in resultados)
+        with sql_owner.connect() as conn:
+            linhas = {
+                r["tipo"]: r for r in conn.execute(
+                    text("SELECT tipo, status_conferencia, xml_data FROM nfe_logs "
+                         "WHERE obra_id = :o AND chave_acesso = :k"),
+                    {"o": cenario["obra_a"], "k": chave},
+                ).mappings()
+            }
+        assert linhas["devolucao"]["xml_data"] is not None  # a devolução foi conferida
+        assert linhas["devolucao"]["status_conferencia"] != "PENDENTE"
+        assert linhas["entrada"]["xml_data"] is None  # a entrada continua pendente
+        assert linhas["entrada"]["status_conferencia"] == "PENDENTE"
+    finally:
+        _limpar_chave(sql_owner, cenario["obra_a"], chave)

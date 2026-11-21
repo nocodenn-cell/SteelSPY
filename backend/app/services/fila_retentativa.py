@@ -31,6 +31,7 @@ def enfileirar_apos_falha_xml(
     chave_acesso: str,
     ultimo_erro: str | None = None,
     tenant_id: UUID | None = None,
+    tipo: str = "entrada",
 ) -> dict[str, Any]:
     chave = chave_acesso[:44]
     proxima = agora_utc() + timedelta(minutes=DELAYS_MINUTOS[0])
@@ -39,13 +40,13 @@ def enfileirar_apos_falha_xml(
     # do tenant correto.
     sql = text("""
         INSERT INTO fila_nfe (
-            tenant_id, obra_id, chave_acesso, tentativas, proxima_tentativa, status, ultimo_erro
+            tenant_id, obra_id, chave_acesso, tipo, tentativas, proxima_tentativa, status, ultimo_erro
         )
         VALUES (
             COALESCE(CAST(:tenant AS uuid), (SELECT o.tenant_id FROM obras o WHERE o.id = CAST(:obra_id AS uuid))),
-            :obra_id, :chave, 0, :proxima, 'pendente', :erro
+            :obra_id, :chave, :tipo, 0, :proxima, 'pendente', :erro
         )
-        ON CONFLICT (obra_id, chave_acesso) DO UPDATE SET
+        ON CONFLICT (obra_id, chave_acesso, tipo) DO UPDATE SET
             ultimo_erro = EXCLUDED.ultimo_erro,
             proxima_tentativa = EXCLUDED.proxima_tentativa,
             tentativas = 0,
@@ -60,6 +61,7 @@ def enfileirar_apos_falha_xml(
             "tenant": str(tenant_id) if tenant_id else None,
             "obra_id": str(obra_id),
             "chave": chave,
+            "tipo": tipo,
             "proxima": proxima,
             "erro": ultimo_erro,
         },
@@ -88,7 +90,7 @@ def _reivindicar_lote_fila(db: Session, limite: int = 50) -> list[Any]:
     """
     rows = db.execute(
         text("""
-            SELECT id, tenant_id, obra_id, chave_acesso, tentativas, notificado_aguardando
+            SELECT id, tenant_id, obra_id, chave_acesso, tipo, tentativas, notificado_aguardando
             FROM fila_reivindicar_lote(:limite)
         """),
         {"limite": limite},
@@ -101,7 +103,7 @@ def processar_tick_fila(
     db: Session,
     *,
     buscar_xml: Callable[[str], dict[str, Any] | None],
-    ao_sucesso: Callable[[Session, UUID, str, dict[str, Any]], None] | None = None,
+    ao_sucesso: Callable[[Session, UUID, str, dict[str, Any], str], None] | None = None,
     notificar_aguardando: Callable[[str, str], None] | None = None,
 ) -> list[dict[str, Any]]:
     resultados: list[dict[str, Any]] = []
@@ -111,6 +113,7 @@ def processar_tick_fila(
         fid = UUID(str(row["id"]))
         obra_id = UUID(str(row["obra_id"]))
         chave = str(row["chave_acesso"])
+        tipo = str(row["tipo"] or "entrada")
         tentativas = int(row["tentativas"])
         notificado = bool(row["notificado_aguardando"])
 
@@ -129,7 +132,7 @@ def processar_tick_fila(
         if xml_data is not None:
             try:
                 if ao_sucesso:
-                    ao_sucesso(db, obra_id, chave, xml_data)
+                    ao_sucesso(db, obra_id, chave, xml_data, tipo)
                 db.execute(
                     text("UPDATE fila_nfe SET status = 'processado', updated_at = NOW() WHERE id = :id"),
                     {"id": str(fid)},

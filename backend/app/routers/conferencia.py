@@ -282,6 +282,7 @@ def post_conferir(
             chave_acesso=chave,
             ultimo_erro="XML não encontrado na API (404 ou timeout)",
             tenant_id=obra["tenant_id"],
+            tipo=body.tipo,
         )
         background_tasks.add_task(_notificar_aguardando, str(body.obra_id), chave, whatsapp_destino_obra)
         return _resposta_pendente_rica(

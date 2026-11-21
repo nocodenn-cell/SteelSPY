@@ -142,19 +142,16 @@ def aplicar_xml_disponivel_fila(
     obra_id: UUID,
     chave_acesso: str,
     xml_data: dict[str, Any],
+    tipo: str = "entrada",
 ) -> None:
-    """Callback do worker: completa conferência para linha PENDENTE existente."""
+    """Callback do worker: completa a conferência (chave + tipo) que está na fila."""
     row = db.execute(
         text("""
             SELECT foto_url, tipo, nf_original_id
             FROM nfe_logs
-            WHERE obra_id = :obra AND chave_acesso = :chave
-            -- Com entrada e devolução na mesma chave há duas linhas. A fila só
-            -- representa a conferência ainda pendente, então ela tem prioridade.
-            ORDER BY (status_conferencia = 'PENDENTE') DESC, processado_em DESC
-            LIMIT 1
+            WHERE obra_id = :obra AND chave_acesso = :chave AND tipo = :tipo
         """),
-        {"obra": str(obra_id), "chave": chave_acesso},
+        {"obra": str(obra_id), "chave": chave_acesso, "tipo": tipo},
     ).mappings().first()
     if row is None:
         logger.warning("Fila sem nfe_logs correspondente obra=%s chave=%s", obra_id, chave_acesso)

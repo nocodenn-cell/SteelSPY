@@ -8,6 +8,30 @@ O projeto **não segue versionamento semântico ainda** — não há tag nem rel
 
 ---
 
+## [Não lançado] — 2026-11-21 — fila de retentativa com `tipo`
+
+### Corrigido
+
+- `fila_nfe` era única por `(obra, chave)`. Com entrada e devolução na mesma chave, as duas retentativas
+  disputavam uma linha, e o worker podia completar a conferência errada. A limitação registrada em P-08 foi
+  resolvida.
+
+### Alterado
+
+- `supabase/migrations/20261121140000_fila_nfe_tipo.sql`: coluna `fila_nfe.tipo` (padrão `entrada`), chave
+  única `(obra_id, chave_acesso, tipo)` e recriação de `fila_reivindicar_lote`, que passa a devolver `tipo`.
+  Não aplicada em produção.
+- `enfileirar_apos_falha_xml` recebe `tipo`; `POST /conferir` passa `body.tipo`.
+- `ao_sucesso` do worker recebe `tipo`; `aplicar_xml_disponivel_fila` busca `nfe_logs` por `(obra, chave, tipo)`
+  e não usa mais a heurística de preferir `PENDENTE`.
+
+### Testes
+
+- `tests/integration/test_idempotencia_tipo.py` — 2 testes novos: entrada e devolução com a mesma chave têm
+  linhas próprias na fila; o worker completa só a devolução e deixa a entrada pendente.
+- Mutação (callback sempre `entrada`): 1 teste falhou. Revertida.
+- Suíte completa com PostgreSQL: **491 passam, 0 pulados**.
+
 ## [Não lançado] — 2026-11-21 — P-09: override propaga para itens e resumo
 
 ### Corrigido
