@@ -114,6 +114,7 @@ def _resposta_conferencia_idempotente(
     chave: str,
     status_db: str,
     xml_data: Any,
+    override_info: Any = None,
 ) -> dict[str, Any]:
     """Reconstrói o JSON da API a partir do snapshot em xml_data + status atual no banco (pós-override)."""
     xd = xml_data if isinstance(xml_data, dict) else {}
@@ -121,10 +122,16 @@ def _resposta_conferencia_idempotente(
     itens_proc = xd.get("itens_processados") or []
     msg_fiscal = gerar_mensagem_fiscal(status_db, resumo, itens_proc)
     can_override = status_db == StatusConferencia.VERMELHO.value
+    ov = override_info if isinstance(override_info, dict) else {}
+    # `status` é o efetivo (pode ser VERDE por aceite). `status_tecnico` é o que a
+    # regra concluiu, e `override` diz quem aceitou e quando, para a conciliação
+    # entre os dois não depender de adivinhação.
     return {
         "nfe_log_id": nfe_log_id,
         "chave_acesso": chave,
         "status": status_db,
+        "status_tecnico": xd.get("severidade_tecnica") or xd.get("status"),
+        "override": {"aplicado": bool(ov.get("historico")), "ultimo": ov.get("ultimo")} if ov else None,
         "alerta": xd.get("alerta", ""),
         "detalhes": xd.get("detalhes") or [],
         "motivos": xd.get("motivos") or [],
@@ -211,7 +218,7 @@ def post_conferir(
 
     ex = db.execute(
         text("""
-            SELECT id, status_conferencia, xml_data
+            SELECT id, status_conferencia, xml_data, override_info
             FROM nfe_logs
             WHERE obra_id = :obra AND chave_acesso = :chave AND tipo = :tipo
         """),
@@ -234,6 +241,7 @@ def post_conferir(
             chave=chave,
             status_db=ex["status_conferencia"],
             xml_data=ex["xml_data"],
+            override_info=ex["override_info"],
         )
 
     payload = buscar_xml_ou_json_por_chave(chave)
@@ -575,16 +583,43 @@ def post_override(
     historico.append(entrada)
     novo_override = {**anterior, "historico": historico, "ultimo": entrada}
 
+    # Propaga o aceite para tudo que mostra status, sem apagar o fato técnico:
+    #   * itens VERMELHO recebem override_aplicado (status_item continua VERMELHO);
+    #   * itens_resumo passa a bater com o status VERDE, guardando a contagem
+    #     anterior em vermelhos_aceitos.
     db.execute(
         text("""
             UPDATE nfe_logs
             SET status_conferencia = 'VERDE',
                 override_info = CAST(:info AS jsonb),
+                itens_resumo = CASE
+                    WHEN itens_resumo IS NULL THEN NULL
+                    ELSE jsonb_set(
+                        jsonb_set(
+                            jsonb_set(
+                                itens_resumo, '{vermelhos_aceitos}',
+                                to_jsonb(COALESCE((itens_resumo->>'vermelhos')::int, 0))
+                            ),
+                            '{verdes}',
+                            to_jsonb(COALESCE((itens_resumo->>'verdes')::int, 0)
+                                     + COALESCE((itens_resumo->>'vermelhos')::int, 0))
+                        ),
+                        '{vermelhos}', '0'
+                    )
+                END,
                 laudo_pdf_url = NULL,
                 laudo_pdf_gerado_em = NULL
             WHERE id = :id
         """),
         {"id": str(nfe_log_id), "info": json.dumps(novo_override)},
+    )
+    db.execute(
+        text("""
+            UPDATE nfe_itens
+            SET override_aplicado = TRUE
+            WHERE nfe_log_id = :id AND status_item = 'VERMELHO'
+        """),
+        {"id": str(nfe_log_id)},
     )
     db.commit()
 

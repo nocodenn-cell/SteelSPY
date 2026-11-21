@@ -8,6 +8,41 @@ O projeto **não segue versionamento semântico ainda** — não há tag nem rel
 
 ---
 
+## [Não lançado] — 2026-11-21 — P-09: override propaga para itens e resumo
+
+### Corrigido
+
+- Após o aceite, `nfe_logs` ficava VERDE, mas `nfe_itens` continuava VERMELHO, `itens_resumo` mantinha
+  vermelhos e o replay de `/conferir` devolvia `status: VERDE` com `alerta: MATERIAL_NAO_SOLICITADO` (A3).
+  O dashboard contava itens vermelhos de NF verde e o relatório semanal contradizia o status.
+
+### Alterado
+
+- `supabase/migrations/20261121130000_nfe_itens_override.sql`: nova coluna `nfe_itens.override_aplicado`
+  (padrão `FALSE`). Não aplicada em produção.
+- `POST /override`: marca os itens VERMELHO com `override_aplicado`, mantém `status_item` como fato técnico e
+  reescreve `itens_resumo` com `vermelhos = 0`, `verdes` somado e `vermelhos_aceitos` guardando a contagem
+  anterior.
+- Replay de `POST /conferir`: a resposta traz `status` (efetivo), `status_tecnico` (regra) e `override`
+  (aplicado e último aceite).
+- `dashboard/queries.py`: o status exibido de item aceito é VERDE; o valor técnico continua em `ni.status_item`.
+
+### Testes
+
+- `tests/integration/test_auth.py::test_override_propaga_para_itens_e_resumo_e_preserva_o_fato_tecnico`:
+  verifica item, resumo, replay e identidade do aceite.
+- Mutação (sem marcar `override_aplicado`): o teste falhou. Revertida.
+- Suíte completa com PostgreSQL: **489 passam, 0 pulados**.
+
+### Não verificado
+
+- O dashboard (Streamlit) não tem suíte de testes. A alteração em `dashboard/queries.py` foi checada apenas
+  por sintaxe.
+
+### Limitação
+
+- O CSV do relatório semanal ainda não tem coluna para `vermelhos_aceitos`.
+
 ## [Não lançado] — 2026-11-21 — P-08: idempotência de conferência considera `tipo`
 
 ### Corrigido

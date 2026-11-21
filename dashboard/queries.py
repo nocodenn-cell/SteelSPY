@@ -50,7 +50,9 @@ def carregar_nfe_itens_periodo(
           ni.marca_recebida,
           ni.quantidade_recebida,
           ni.unidade_recebida,
-          ni.status_item,
+          -- status efetivo: item aceito por override conta como VERDE. O fato
+          -- técnico continua em ni.status_item.
+          CASE WHEN ni.override_aplicado THEN 'VERDE' ELSE ni.status_item END AS status_item,
           ni.especificacao_id::text AS especificacao_id,
           e.qtd_planejada_metros,
           e.bitola_mm AS esp_bitola_mm,

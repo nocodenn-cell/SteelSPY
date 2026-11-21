@@ -12,6 +12,7 @@ role `stellspy_app` (sem BYPASSRLS). O que eles provam:
 
 from __future__ import annotations
 
+import json
 import time
 import uuid
 from typing import Any
@@ -439,3 +440,77 @@ def test_bloqueio_por_ip_afeta_outro_email(
 
     # Conta diferente, mesmo IP (TestClient usa o mesmo host).
     assert _login(cliente, equipe["emails"]["eng_a"]).status_code == 429
+
+
+# ---------------------------------------------------------------------------
+# P-09 (A3): o aceite propaga para os itens e o resumo, sem apagar o fato técnico
+# ---------------------------------------------------------------------------
+
+
+def test_override_propaga_para_itens_e_resumo_e_preserva_o_fato_tecnico(
+    cliente: Any, equipe: dict[str, Any], sql_owner: Any, cenario: dict[str, Any]
+) -> None:
+    nfe = equipe["nfe_a"]
+    chave = chave_nfe_valida("3" * 43)
+    with sql_owner.begin() as conn:
+        conn.execute(
+            text(
+                "UPDATE nfe_logs SET chave_acesso = :k, status_conferencia = 'VERMELHO', "
+                "xml_data = CAST(:x AS jsonb), itens_resumo = CAST(:r AS jsonb) WHERE id = :id"
+            ),
+            {
+                "k": chave,
+                "id": nfe,
+                "x": json.dumps({
+                    "alerta": "MATERIAL_NAO_SOLICITADO",
+                    "severidade_tecnica": "VERMELHO",
+                    "detalhes": [], "motivos": [], "modo_aprendizado": False,
+                    "itens_processados": [],
+                    "resumo": {"total": 2, "verdes": 1, "amarelos": 0, "vermelhos": 1},
+                }),
+                "r": json.dumps({"total": 2, "verdes": 1, "amarelos": 0, "vermelhos": 1}),
+            },
+        )
+        # o `equipe` já criou o item 1 desta NF: ele vira o item divergente
+        conn.execute(
+            text("UPDATE nfe_itens SET status_item = 'VERMELHO' WHERE nfe_log_id = :n"),
+            {"n": nfe},
+        )
+
+    assert _login(cliente, equipe["emails"]["eng_a"]).status_code == 200
+    csrf = cliente.cookies.get("stellspy_csrf")
+    r = cliente.post(
+        f"/override/{nfe}",
+        json={"justificativa": "divergencia analisada e aceita pelo RT"},
+        headers={"X-CSRF-Token": csrf},
+    )
+    assert r.status_code == 200, r.text
+
+    with sql_owner.connect() as conn:
+        item = conn.execute(
+            text("SELECT status_item, override_aplicado FROM nfe_itens WHERE nfe_log_id = :n"),
+            {"n": nfe},
+        ).mappings().one()
+        resumo = conn.execute(
+            text("SELECT itens_resumo FROM nfe_logs WHERE id = :n"), {"n": nfe}
+        ).scalar_one()
+    # o fato técnico continua; o aceite é uma marca separada
+    assert item["status_item"] == "VERMELHO"
+    assert item["override_aplicado"] is True
+    # a contagem passa a bater com o status VERDE, e a anterior fica registrada
+    assert resumo["vermelhos"] == 0
+    assert resumo["vermelhos_aceitos"] == 1
+    assert resumo["verdes"] == 2
+
+    # o replay devolve status efetivo, técnico e quem aceitou
+    r2 = cliente.post(
+        "/conferir",
+        json={"obra_id": str(cenario["obra_a"]), "chave_acesso": chave, "tipo": "entrada"},
+        headers={"X-CSRF-Token": csrf},
+    )
+    assert r2.status_code == 200, r2.text
+    corpo = r2.json()
+    assert corpo["status"] == "VERDE"
+    assert corpo["status_tecnico"] == "VERMELHO"
+    assert corpo["override"]["aplicado"] is True
+    assert corpo["override"]["ultimo"]["usuario_id"] == str(equipe["ids"]["eng_a"])
