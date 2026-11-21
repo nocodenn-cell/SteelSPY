@@ -10,7 +10,6 @@
 - P-11 (A2): `modo_aprendizado` nasce ligado por padrão e rebaixa VERMELHO para AMARELO; obra nova deveria nascer bloqueando (`docs/execucao/PROXIMOS_PASSOS.md`)
 - P-08 (A4): idempotência ignora `tipo`, então devolução da mesma chave retorna a conferência original
 - P-09 (A3): override humano deixa `status_calculado` e `status_efetivo` incoerentes
-- P-07 (A1): SSRF via redirect em `foto_url`
 
 ## P2 — Melhoria
 
@@ -21,6 +20,7 @@
 
 ## Feito
 
+- 2026-11-21 — P-07 (SSRF em `foto_url`): redirects não são mais seguidos automaticamente; cada salto é validado (https, porta 443, hostname) e o DNS precisa resolver só para endereços públicos. A conexão vai ao IP validado, com SNI e Host do hostname, o que fecha DNS rebinding. Proxy do ambiente ignorado. +43 testes (redirect malicioso, IP privado, IPv4 mapeado, DNS misto, rebinding, URL inválida, tamanho). Mutação confirmou os testes. Suíte: 484 passam, 0 pulados
 - 2026-11-19 — `correlacao.chave_base`: sacos e toneladas convergem para kg (mesma conversão da conferência); pedido em sacos casa com NF em kg. Corrigido bug: o saldo era mantido em kg cru e a soma faturada misturava kg com metros. Sem bitola, linha em sacos/t só casa com item de mesma categoria detectada. m³ segue base própria (densidade depende do material). Suíte completa: 441 passam, 0 pulados (265 unitários + 176 de integração contra PostgreSQL)
 - 2026-11-18 — Suíte de integração executada contra PostgreSQL 16 (container `stellspy-pg`, porta 55432): 176 passam, 0 pulados. Suíte completa: 436 passam, 0 pulados
 - 2026-11-18 — Aço: `quantidade_recebida_em_metros` passa a aceitar toneladas, PC/PCS/PCT, MT/M1, minúsculas e `metros_por_barra` nulo (usa 12 m); unidade desconhecida segue gerando AMARELO. +5 testes (260 passam)

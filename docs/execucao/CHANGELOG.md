@@ -8,6 +8,31 @@ O projeto **não segue versionamento semântico ainda** — não há tag nem rel
 
 ---
 
+## [Não lançado] — 2026-11-21 — P-07: SSRF em foto_url via redirect e DNS
+
+### Corrigido
+
+- `laudo_pdf._carregar_imagem_url` usava `httpx.get(follow_redirects=True)` e validava só a URL inicial. Um
+  redirect para `10.x`, `127.0.0.1` ou `169.254.169.254` era seguido. Um hostname público que resolvia para
+  rede privada também passava, porque a validação era só literal.
+- Novo `baixar_foto_segura` em `app/utils/url_seguras.py`: redirects manuais (máximo 3), validação em cada
+  salto, todos os endereços DNS precisam ser públicos, conexão ao IP validado (fecha DNS rebinding),
+  porta 443 e sem proxy do ambiente (`trust_env=False`).
+- `_carregar_imagem_url` passa a delegar para `baixar_foto_segura`. Falhas continuam devolvendo `None`.
+
+### Testes
+
+- `tests/test_foto_ssrf.py` — 43 testes: redirects legítimos (mesmo host e host público diferente), redirects
+  maliciosos, IP privado e IPv4 mapeado, DNS misto, rebinding, falha de DNS, URL inválida, conteúdo não
+  imagem, limite de tamanho e classificação de IP.
+- Teste de mutação: classificar todo IP como público fez 13 falharem; revalidar só a URL original fez 10
+  falharem. Ambas as mutações foram revertidas.
+- Suíte completa com PostgreSQL: **484 passam, 0 pulados**.
+
+### Limitações
+
+- Porta diferente de 443 agora é recusada. Nenhum uso conhecido depende disso.
+
 ## [Não lançado] — 2026-11-19 — correlação: unidades no motor pedido × NF-e
 
 ### Corrigido

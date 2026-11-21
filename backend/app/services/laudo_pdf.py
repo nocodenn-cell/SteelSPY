@@ -14,7 +14,7 @@ from typing import Any
 import httpx
 from fpdf import FPDF
 
-from app.utils.url_seguras import URLNaoPermitidaError, validar_url_imagem_publica
+from app.utils.url_seguras import baixar_foto_segura
 
 FONT_PATH = Path(__file__).resolve().parent.parent.parent / "assets" / "fonts" / "DejaVuSans.ttf"
 EMISSOR_PADRAO = os.getenv("LAUDO_EMISSOR_NOME", "CheckObra AI")
@@ -131,17 +131,8 @@ def _veredito_bloco(status: str) -> tuple[str, str, tuple[int, int, int]]:
 
 
 def _carregar_imagem_url(url: str, timeout: float = 15.0) -> bytes | None:
-    try:
-        validar_url_imagem_publica(url)
-    except URLNaoPermitidaError:
-        return None
-    try:
-        r = httpx.get(url, timeout=timeout, follow_redirects=True)
-        if r.status_code == 200 and r.content[:4] in (b"\xff\xd8\xff", b"\x89PNG", b"GIF8"):
-            return r.content
-    except httpx.RequestError:
-        return None
-    return None
+    """Baixa a foto da NF com validação de cada redirect e fixação de IP (P-07)."""
+    return baixar_foto_segura(url, timeout=timeout)
 
 
 def _proc_txt(ctx: dict[str, Any]) -> str:
