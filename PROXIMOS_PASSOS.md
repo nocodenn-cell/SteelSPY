@@ -9,7 +9,6 @@
 
 - **Integração `claude/integracao-auditoria-2026-11-21`: aguardar aprovação antes de push, PR ou merge.** Nada foi enviado ao remoto. Detalhes em `docs/AUDITORIA_REVALIDACAO_2026-11-21.md` §12.
 - **Validar a ordem da migração `20261114120000_fila_reaper.sql`** num banco descartável que já tenha `20261121120000`–`20261121140000` aplicadas (ela entra fora de sequência). Antes de qualquer aplicação em produção.
-- **Decidir a agregação do override:** `54a7b21` ficou de fora porque `52fee46` (P-09) já cobre o mesmo achado com outro desenho (`VERDE` e `vermelhos_aceitos` em vez de `ACEITO_OVERRIDE` e `aceitos_por_override`). Confirmar o desenho escolhido.
 - **P-11.2 — auditoria de obras com `modo_aprendizado = TRUE` — BLOQUEADA (sem acesso de leitura ao banco de produção).**
   - Causa: nesta sessão não há acesso ao banco de produção do SteelSPY. Na conta Supabase conectada, os projetos `jinlong` e `jinlong-homolog-palm` não têm a tabela `obras`, e o staging está inativo. O banco de teste local não respondeu (Docker com erro 500 no daemon).
   - Pronto: `docs/execucao/AUDITORIA_MODO_APRENDIZADO.sql`, somente leitura (`SET TRANSACTION READ ONLY`, termina em `ROLLBACK`), com 4 blocos: contagem de obras; por obra (conferências, rebaixadas, abertas, overrides); divergências não resolvidas por tipo; impacto nos últimos 90 dias. Não foi executado: a validação de sintaxe falhou por indisponibilidade do banco de teste.

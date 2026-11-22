@@ -380,6 +380,9 @@ Esta seção não altera a classificação das seções 1–11, que descrevem o 
 | Suíte completa (após a correção, antes dos cherry-picks) | **494 passed**, 0 pulados, 152 s |
 | Suíte completa (após os cherry-picks) | **505 passed**, 0 pulados, exit 0, 177 s |
 | Migrações, banco novo e isolado (`postgres:16-alpine`, porta 55440) | Execução 1: 33 aplicadas, exit 0. Execução 2: 0 pendentes, exit 0 |
+| Validação final (2026-11-22), suíte completa com PostgreSQL | **505 passed**, 0 pulados, exit 0, 512 s |
+| Validação final (2026-11-22), teste de corrida, 3 execuções isoladas | 3 de 3 passam (65 s, 73 s, 239 s; a chamada do teste é rápida, a diferença está no setup) |
+| Validação final (2026-11-22), migrações em banco novo `validacao_20261122` | Execução 1: 33 aplicadas, exit 0. Execução 2: 0 pendentes, exit 0 |
 
 ### 12.4 Commits integrados
 
@@ -394,7 +397,7 @@ Esta seção não altera a classificação das seções 1–11, que descrevem o 
 
 **Não integrados (decisão nesta etapa):**
 
-- `54a7b21` (agregação do override): substituído pelo `52fee46` (P-09), que já está na base. Os dois desenhos divergem: a branch `dec4d1` projeta `ACEITO_OVERRIDE` e usa a chave `aceitos_por_override`; a base projeta `VERDE` e usa `vermelhos_aceitos`, que o CSV semanal já consome. O commit também traz `pandas` em `requirements-dev.txt`, usado só pelo teste dele. Integrá-lo exigiria escolher um dos dois desenhos. **Decisão a confirmar com o usuário.**
+- `54a7b21` (agregação do override): substituído pelo `52fee46` (P-09), que já está na base. Os dois desenhos divergem: a branch `dec4d1` projeta `ACEITO_OVERRIDE` e usa a chave `aceitos_por_override`; a base projeta `VERDE` e usa `vermelhos_aceitos`, que o CSV semanal já consome. O commit também traz `pandas` em `requirements-dev.txt`, usado só pelo teste dele. Integrá-lo exigiria escolher um dos dois desenhos. **Não aplicado (verificado em 2026-11-22):** a base já agrega o override (`vermelhos_aceitos` em `itens_resumo`, coluna `itens_vermelhos_aceitos` no CSV e testes do P-09), então o commit duplica o achado. O critério combinado era aplicar só se não duplicasse `52fee46`/`96a6969`. Sem hash resultante.
 - `b399f25` (foto do laudo em streaming com teto de bytes e IP fixado): a base já tem `baixar_foto_segura` com teto de 10 MB e fixação de IP (P-07).
 - `b87aed2` (testes de bordas com PostgreSQL, fora do escopo listado): candidato a integrar depois.
 - Já cobertos pela base, não trazidos: `5d22539`, `4ff8ea0`, `29a26ac`, `482ae30`, `09919ee`, `b92e14d`, `52fee46`, `96a6969`. Normalização de unidades (`2c35c77`, `996a695`, `42e66f9`) já está no `main`. Migrações duplicadas `20261112120000` e `20261113120000` cobertas por `20261121130000` e `20261121120000`. Documentação antiga (`89ae3f8` e o `PROXIMOS_PASSOS` de `dec4d1`) não foi trazida.
@@ -409,7 +412,7 @@ Esta seção não altera a classificação das seções 1–11, que descrevem o 
 ### 12.6 Riscos ainda abertos
 
 1. Ordem de migração: `20261114120000` é anterior às `20261121*`. Validar no cenário de produção (ver 12.5) antes de qualquer aplicação.
-2. Decisão pendente sobre `54a7b21` (12.4).
+2. `54a7b21` não aplicado por duplicar o P-09 (12.4). Sem pendência.
 3. Variação de tempo do teste de corrida (3 s a 160 s) no setup do banco; não explicada completamente. O travamento de mais de 8 min não foi reproduzido.
 4. M4 segue parcial: falta limite por obra em `/conferir` e `correlation_id`.
 5. Continuam abertos do `main`: A5 (fatores fixos de cimento), B7 (`utcnow`), B14 (`time.sleep` em `BackgroundTasks`), B8 (`ln=`/`dest=` do `fpdf2`), B13 (dia em UTC no dashboard), M3 (dicionário de sinônimos), e os demais itens baixos da seção 3.3.
