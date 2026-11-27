@@ -1,5 +1,7 @@
 """P-07: download de foto_url sem SSRF via redirect nem via DNS (fixação de IP)."""
 
+import gzip
+
 import httpx
 import pytest
 
@@ -275,3 +277,55 @@ def test_imagem_maior_que_o_limite_e_descartada(monkeypatch):
 )
 def test_classificacao_de_ip(ip, publico):
     assert ip_publico(ip) is publico
+
+
+# --- teto de bytes vale para o corpo que chega (não depois de descomprimir) ---
+
+
+def test_foto_com_content_encoding_e_recusada_antes_de_bufferizar():
+    transport, chamadas = _transporte(
+        {
+            (PUBLICO, "/foto.jpg"): httpx.Response(
+                200, headers={"content-encoding": "gzip"}, content=gzip.compress(JPEG)
+            )
+        }
+    )
+    dados = baixar_foto_segura(
+        "https://cdn.exemplo.com.br/foto.jpg",
+        resolver=_resolver({"cdn.exemplo.com.br": [PUBLICO]}),
+        transport=transport,
+    )
+    assert dados is None
+    assert chamadas, "a requisição foi feita"
+
+
+def test_pedido_de_foto_pede_identidade_de_codificacao():
+    cabecalhos = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        cabecalhos.append(request.headers.get("accept-encoding"))
+        return httpx.Response(200, content=JPEG)
+
+    baixar_foto_segura(
+        "https://cdn.exemplo.com.br/foto.jpg",
+        resolver=_resolver({"cdn.exemplo.com.br": [PUBLICO]}),
+        transport=httpx.MockTransport(handler),
+    )
+    assert cabecalhos == ["identity"]
+
+
+def test_foto_com_content_length_acima_do_teto_e_recusada():
+    grande = str(url_seguras.MAX_BYTES_FOTO + 1)
+    transport, _ = _transporte(
+        {
+            (PUBLICO, "/foto.jpg"): httpx.Response(
+                200, headers={"content-length": grande}, content=JPEG
+            )
+        }
+    )
+    dados = baixar_foto_segura(
+        "https://cdn.exemplo.com.br/foto.jpg",
+        resolver=_resolver({"cdn.exemplo.com.br": [PUBLICO]}),
+        transport=transport,
+    )
+    assert dados is None

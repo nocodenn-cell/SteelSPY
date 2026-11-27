@@ -51,6 +51,12 @@ def validar_url_imagem_publica(url: str | None) -> str | None:
     host = parsed.hostname
     if not host:
         raise URLNaoPermitidaError("foto_url com hostname inválido.")
+    try:
+        porta = parsed.port
+    except ValueError as exc:  # porta não numérica ou fora de 0-65535
+        raise URLNaoPermitidaError("foto_url com porta inválida.") from exc
+    if porta not in (None, 443):
+        raise URLNaoPermitidaError("foto_url só pode usar a porta 443.")
 
     allow = (os.getenv("FOTO_URL_ALLOWED_HOSTS") or "").strip()
     if allow:
@@ -169,7 +175,9 @@ def baixar_foto_segura(
                 with cli.stream(
                     "GET",
                     alvo,
-                    headers={"Host": host},
+                    # identity: o teto de 10 MB vale para o corpo que chega, não para
+                    # um corpo comprimido que se expande depois de bufferizado.
+                    headers={"Host": host, "Accept-Encoding": "identity"},
                     extensions={"sni_hostname": host},
                 ) as r:
                     if r.status_code in _STATUS_REDIRECT:
@@ -179,6 +187,12 @@ def baixar_foto_segura(
                         atual = urljoin(atual, destino)
                         continue
                     if r.status_code != 200:
+                        return None
+                    codificacao = (r.headers.get("content-encoding") or "identity").strip().lower()
+                    if codificacao != "identity":
+                        return None
+                    tamanho = r.headers.get("content-length")
+                    if tamanho is not None and (not tamanho.isdigit() or int(tamanho) > MAX_BYTES_FOTO):
                         return None
                     corpo = bytearray()
                     for trecho in r.iter_bytes():

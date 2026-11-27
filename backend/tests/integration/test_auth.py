@@ -573,3 +573,60 @@ def test_laudo_autorizado_nao_redireciona_para_bucket_publico(
     assert r.status_code == 200, r.text
     assert "location" not in r.headers
     assert r.content.startswith(b"%PDF")
+
+
+# ---------------------------------------------------------------------------
+# 17. Backfill do override antigo (migração 20261121130000)
+# ---------------------------------------------------------------------------
+
+
+def _sql_do_backfill_override(caminho_migracoes: Any) -> str:
+    """Extrai do arquivo de migração o bloco de backfill, para testar o SQL real."""
+    arquivo = caminho_migracoes / "20261121130000_nfe_itens_override.sql"
+    texto = arquivo.read_text(encoding="utf-8")
+    inicio = texto.index("UPDATE nfe_itens ni")
+    return texto[inicio:]
+
+
+def test_backfill_marca_itens_de_nf_com_aceite_antigo_e_e_idempotente(
+    equipe: dict[str, Any], sql_owner: Any, caminho_migracoes: Any
+) -> None:
+    """
+    NF aceita antes da migração tem override_info->historico não vazio: os itens
+    VERMELHO dela têm de ficar com override_aplicado. NF sem aceite não muda.
+    Rodar de novo não altera nada.
+    """
+    nfe = equipe["nfe_a"]
+    _preparar_nf_vermelha_com_item(sql_owner, equipe, nfe)
+    backfill = _sql_do_backfill_override(caminho_migracoes)
+
+    def _flag() -> bool:
+        with sql_owner.connect() as conn:
+            return conn.execute(
+                text("SELECT override_aplicado FROM nfe_itens WHERE nfe_log_id = :n"),
+                {"n": str(nfe)},
+            ).scalar_one()
+
+    # sem aceite: o backfill não marca
+    with sql_owner.begin() as conn:
+        conn.execute(text("UPDATE nfe_logs SET override_info = NULL WHERE id = :n"), {"n": str(nfe)})
+        conn.execute(text(backfill))
+    assert _flag() is False
+
+    # com aceite antigo: marca
+    with sql_owner.begin() as conn:
+        conn.execute(
+            text("UPDATE nfe_logs SET override_info = CAST(:i AS jsonb) WHERE id = :n"),
+            {"i": json.dumps({"historico": [{"justificativa": "aceito"}]}), "n": str(nfe)},
+        )
+        conn.execute(text(backfill))
+    assert _flag() is True
+
+    # segunda execução: nada muda e o status técnico continua VERMELHO
+    with sql_owner.begin() as conn:
+        conn.execute(text(backfill))
+        status = conn.execute(
+            text("SELECT status_item FROM nfe_itens WHERE nfe_log_id = :n"), {"n": str(nfe)}
+        ).scalar_one()
+    assert _flag() is True
+    assert status == "VERMELHO"

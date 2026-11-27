@@ -18,3 +18,16 @@ ALTER TABLE nfe_itens ADD COLUMN IF NOT EXISTS override_aplicado BOOLEAN NOT NUL
 
 COMMENT ON COLUMN nfe_itens.override_aplicado IS
   'TRUE quando um responsável aceitou a divergência deste item. status_item guarda o fato técnico; o status efetivo é VERDE quando override_aplicado.';
+
+-- Backfill dos aceites feitos antes desta migração. A regra é a mesma do endpoint
+-- de override (conferencia.py, POST /override) e do replay: a NF tem aceite quando
+-- override_info->'historico' é um array não vazio; os itens VERMELHO dela recebem
+-- override_aplicado. Idempotente: só altera linhas ainda não marcadas.
+UPDATE nfe_itens ni
+   SET override_aplicado = TRUE
+  FROM nfe_logs nl
+ WHERE nl.id = ni.nfe_log_id
+   AND ni.status_item = 'VERMELHO'
+   AND ni.override_aplicado = FALSE
+   AND jsonb_typeof(nl.override_info -> 'historico') = 'array'
+   AND jsonb_array_length(nl.override_info -> 'historico') > 0;
