@@ -31,7 +31,20 @@ export function mostrarToast(mensagem, tipo = "erro") {
 }
 
 export function conclusaoItem(i) {
-  return i["conclusão"] || i.conclusao || "—";
+  // B10: a chave canônica é ASCII ("conclusao"); "conclusão" é lida só por compatibilidade.
+  return i.conclusao || i["conclusão"] || "—";
+}
+
+/**
+ * B4: esperado (especificação) e recebido (NF) de um item da conferência.
+ * Campos vazios viram travessão, para a tela nunca mostrar "undefined" ou vazio.
+ */
+export function valoresComparados(i) {
+  const texto = (v) => {
+    const s = v == null ? "" : String(v).trim();
+    return s || "—";
+  };
+  return { esperado: texto(i.esperado), recebido: texto(i.recebido) };
 }
 
 // ---------------------------------------------------------------------------
@@ -299,13 +312,20 @@ export function renderizarResultado(data, base, container) {
     cartao(
       el("h3", { class: "text-base font-black uppercase mb-2" }, "Item por item"),
       detalhes.length
-        ? detalhes.map((i) => el(
-            "div",
-            { class: "flex flex-col gap-1 py-3 border-b-4 border-gray-200 last:border-0" },
-            el("span", { class: "font-black text-base" }, String(i.item || "—")),
-            el("span", { class: "text-xs font-bold uppercase text-gray-600" }, "Recebido / análise"),
-            el("span", { class: "font-bold" }, conclusaoItem(i)),
-          ))
+        ? detalhes.map((i) => {
+            const cmp = valoresComparados(i);
+            return el(
+              "div",
+              { class: "flex flex-col gap-1 py-3 border-b-4 border-gray-200 last:border-0" },
+              el("span", { class: "font-black text-base" }, String(i.item || "—")),
+              el("span", { class: "text-xs font-bold uppercase text-gray-600" }, "Esperado"),
+              el("span", { class: "font-bold" }, cmp.esperado),
+              el("span", { class: "text-xs font-bold uppercase text-gray-600" }, "Recebido na NF"),
+              el("span", { class: "font-bold" }, cmp.recebido),
+              el("span", { class: "text-xs font-bold uppercase text-gray-600" }, "Análise"),
+              el("span", { class: "font-bold" }, conclusaoItem(i)),
+            );
+          })
         : el(
             "p",
             { class: "font-bold text-gray-800" },
