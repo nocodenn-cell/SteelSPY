@@ -2,17 +2,11 @@
 
 Job agendado: relatório CSV de NF-e conferidas + e-mail por obra.
 
-
-
 Exemplo (cron semanal, domingo 06:00 UTC):
 
   cd backend && python -m app.relatorio_semanal_main
 
-
-
 Variáveis: ver backend/.env.example (SMTP_*, RELATORIO_*).
-
-
 
 RELATORIO_DRY_RUN=1 — gera CSV e loga sem enviar e-mail.
 
@@ -22,11 +16,7 @@ RELATORIO_USAR_TZ_BR=1 — janela em dias corridos America/Sao_Paulo (chave idem
 
 """
 
-
-
 from __future__ import annotations
-
-
 
 import logging
 
@@ -35,8 +25,6 @@ import os
 import sys
 
 from uuid import UUID
-
-
 
 from app.db import SessionLocal
 
@@ -60,14 +48,9 @@ from app.services.relatorio_semanal import (
 
 )
 
-
-
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 
 logger = logging.getLogger(__name__)
-
-
-
 
 
 def main() -> int:
@@ -79,8 +62,6 @@ def main() -> int:
     inicio, fim, chave, etiqueta_tz = periodo_relatorio_job()
 
     copia = destinatarios_globais_opcional()
-
-
 
     db = SessionLocal()
 
@@ -94,8 +75,6 @@ def main() -> int:
 
             return 0
 
-
-
         for ob in obras:
 
             obra_id = UUID(str(ob["id"]))
@@ -105,8 +84,6 @@ def main() -> int:
             if not destinos:
 
                 continue
-
-
 
             ultima_chave = (ob.get("relatorio_ultimo_periodo_chave") or "").strip()
 
@@ -124,8 +101,6 @@ def main() -> int:
 
                 continue
 
-
-
             linhas = listar_logs_periodo_obra(db, obra_id=obra_id, inicio_utc=inicio, fim_utc=fim)
 
             csv_bytes = montar_csv_bytes(linhas)
@@ -133,8 +108,6 @@ def main() -> int:
             fname = nome_arquivo_csv(obra_id, inicio, fim)
 
             obra_nome = str(ob.get("nome") or obra_id)
-
-
 
             if dry:
 
@@ -160,8 +133,6 @@ def main() -> int:
 
                 continue
 
-
-
             assunto = (
 
                 f"[SteelSpy] NF-e {obra_nome} — {inicio.date()} a {fim.date()} "
@@ -171,8 +142,6 @@ def main() -> int:
             )
 
             corpo = corpo_email_pt(obra_nome, inicio, fim, len(linhas), etiqueta_tz=etiqueta_tz)
-
-
 
             try:
 
@@ -198,13 +167,9 @@ def main() -> int:
 
                 continue
 
-
-
             atualizar_idempotencia_relatorio(db, obra_id, chave)
 
             logger.info("Relatório enviado obra=%s chave=%s", obra_nome, chave)
-
-
 
         return 0
 
@@ -212,11 +177,6 @@ def main() -> int:
 
         db.close()
 
-
-
-
-
 if __name__ == "__main__":
 
     sys.exit(main())
-

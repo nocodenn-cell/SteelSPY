@@ -13,13 +13,19 @@ Trilha escolhida: colocar **banco + API** prontos para o piloto antes do PWA. Si
 
 ## 2. Migrações SQL (schema)
 
-No **SQL Editor**, rode **na ordem** os ficheiros em `supabase/migrations/` (ou use Supabase CLI: `supabase db push` com o projeto ligado):
+Aplique **todas** as migrações de `supabase/migrations/`, **em ordem pelo nome** (timestamp), sem pular arquivo. A lista fixa de arquivos foi removida: ela ficava para trás a cada migração nova (B3).
 
-1. `20260410120000_core_schema.sql`
-2. `20260410200000_nfe_logs_foto_url.sql`
-3. `20260410210000_nfe_itens_resumo_devolucao.sql`
-4. `20260410230000_nfe_logs_laudo_storage.sql`
-5. `20260410240000_obras_api_key_idempotencia.sql`
+Duas formas, equivalentes:
+
+- **Supabase CLI:** `supabase db push` com o projeto ligado.
+- **Script do repositório** (banco PostgreSQL direto), a partir de `backend/`:
+
+```powershell
+$env:DATABASE_URL = "postgresql://<usuario>:<senha>@<host>:<porta>/<banco>"
+python scripts/apply_migrations.py --dir ../supabase/migrations
+```
+
+O script registra o que já foi aplicado em `schema_migrations` e roda o restante uma única vez. Rode-o de novo ao final: a segunda execução deve mostrar 0 pendentes.
 
 **Verificação rápida:**
 

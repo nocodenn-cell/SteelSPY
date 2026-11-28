@@ -1,7 +1,7 @@
 """
 Regras de divergência para itens classificados como cimento (CP-II, CP-V, etc.).
 
-Integração com `conferente.conferir_nf_multiplos_itens` virá após matching por categoria + extração de atributos da NF.
+Usada por `conferente.conferir_nf_multiplos_itens` para itens de cimento. A decisão de matching por categoria fica em `conferente.py`.
 """
 
 from __future__ import annotations
