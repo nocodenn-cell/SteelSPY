@@ -17,6 +17,9 @@ class URLNaoPermitidaError(ValueError):
     """URL rejeitada por política de segurança."""
 
 
+_CGNAT_IPV4 = ipaddress.ip_network("100.64.0.0/10")
+
+
 def _host_literais_e_metadata(hostname: str) -> bool:
     h = hostname.lower().rstrip(".")
     if h in ("localhost", "0.0.0.0", "metadata", "metadata.google.internal"):
@@ -26,6 +29,9 @@ def _host_literais_e_metadata(hostname: str) -> bool:
     try:
         ip = ipaddress.ip_address(h)
         if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_multicast or ip.is_reserved:
+            return False
+        # B9: CGNAT (100.64.0.0/10) não é "private" para ipaddress, mas não é público.
+        if isinstance(ip, ipaddress.IPv4Address) and ip in _CGNAT_IPV4:
             return False
         if ip == ipaddress.ip_address("169.254.169.254"):
             return False

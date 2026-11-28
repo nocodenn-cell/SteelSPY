@@ -6,6 +6,8 @@ from __future__ import annotations
 
 import json
 import logging
+import re
+import uuid
 from datetime import datetime, timezone
 from typing import Any, Literal
 from uuid import UUID
@@ -16,6 +18,12 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.auth_obra import verificar_acesso_obra
+from app.limite_tentativas import (
+    chave_conferir_obra,
+    conferir_janela_segundos,
+    conferir_max_por_obra,
+    limite,
+)
 from app.deps import autorizar_na_obra, exigir_csrf, sessao_atual, sessao_opcional
 from app.pwa_session import SESSION_COOKIE_NAME
 from app.db import get_db
@@ -163,15 +171,29 @@ def _resposta_pendente_rica(
     }
 
 
+_CORRELACAO_RE = re.compile(r"[A-Za-z0-9._-]{8,64}")
+
+
+def _correlation_id(request: Request) -> str:
+    """Aceita o X-Correlation-ID do cliente quando é seguro; senão gera um novo."""
+    recebido = (request.headers.get("X-Correlation-ID") or "").strip()
+    if _CORRELACAO_RE.fullmatch(recebido):
+        return recebido
+    return uuid.uuid4().hex
+
+
 @router.post("/conferir")
 def post_conferir(
     request: Request,
+    response: Response,
     body: ConferirBody,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     x_api_key: str | None = Header(None, alias="X-API-KEY"),
     pwa_session_cookie: str | None = Cookie(None, alias=SESSION_COOKIE_NAME),
 ) -> dict[str, Any]:
+    cid = _correlation_id(request)
+    response.headers["X-Correlation-ID"] = cid
     try:
         chave = validar_chave(body.chave_acesso)
     except ChaveNFeInvalidaError as e:
@@ -241,6 +263,32 @@ def post_conferir(
             xml_data=ex["xml_data"],
             override_info=ex["override_info"],
         )
+
+    # M4: teto de consultas pagas por obra. Conta só o que vai à NFe.io.
+    chave_obra = chave_conferir_obra(str(body.obra_id))
+    janela = conferir_janela_segundos()
+    bloqueado, restante = limite().bloqueado(
+        chave_obra, maximo=conferir_max_por_obra(), janela=janela
+    )
+    if bloqueado:
+        logger.warning(
+            "conferir correlation_id=%s obra=%s evento=limite_por_obra retry_after=%s",
+            cid,
+            str(body.obra_id)[:8],
+            restante,
+        )
+        raise HTTPException(
+            status_code=429,
+            detail="limite de consultas da obra atingido; tente novamente em instantes",
+            headers={"Retry-After": str(restante), "X-Correlation-ID": cid},
+        )
+    limite().registrar_falha(chave_obra, janela=janela)
+    logger.info(
+        "conferir correlation_id=%s obra=%s chave=...%s evento=consulta_nfeio",
+        cid,
+        str(body.obra_id)[:8],
+        chave[-4:],
+    )
 
     payload = buscar_xml_ou_json_por_chave(chave)
     if payload is None:
