@@ -93,3 +93,28 @@ def test_notificar_mensagem_fiscal_sem_config_apenas_log(caplog, monkeypatch):
         we.notificar_mensagem_fiscal("obra-uuid", "1" * 44, "texto fiscal")
     assert "WhatsApp desligado" in caplog.text
     assert "obra-uuid" in caplog.text
+
+
+@patch("app.services.whatsapp_evolution.httpx.post")
+def test_espera_total_de_retentativas_tem_teto_b14(mock_post, monkeypatch):
+    """
+    B14: a retentativa roda dentro de BackgroundTasks (thread do pool). Sem teto,
+    backoff base alto (até 60 s por espera, 10 tentativas) prendia a thread por minutos.
+    Com o orçamento de espera, o total dormido fica limitado e a tentativa para cedo.
+    """
+    monkeypatch.setenv("EVOLUTION_API_BASE_URL", "https://api.evolution.test")
+    monkeypatch.setenv("EVOLUTION_API_KEY", "secret-key")
+    monkeypatch.setenv("EVOLUTION_INSTANCE_NAME", "inst-1")
+    monkeypatch.setenv("EVOLUTION_MAX_TENTATIVAS", "10")
+    monkeypatch.setenv("EVOLUTION_BACKOFF_BASE_SEGUNDOS", "60")
+    monkeypatch.setenv("EVOLUTION_ORCAMENTO_ESPERA_SEGUNDOS", "10")
+
+    req = httpx.Request("POST", "https://api.evolution.test/message/sendText/inst-1")
+    mock_post.return_value = httpx.Response(503, request=req)
+
+    esperas: list[float] = []
+    monkeypatch.setattr(we.time, "sleep", lambda s: esperas.append(s))
+
+    assert we._enviar_texto_com_resiliencia("5511999999999", "msg") is False
+    assert sum(esperas) <= 10.0
+    assert mock_post.call_count < 10

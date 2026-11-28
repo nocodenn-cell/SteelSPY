@@ -153,6 +153,8 @@ def _enviar_texto_evolution(numero: str, texto: str) -> bool:
 def _enviar_texto_com_resiliencia(numero: str, texto: str) -> bool:
     max_t = _env_int("EVOLUTION_MAX_TENTATIVAS", 3, min_v=1, max_v=10)
     base_sleep = _env_float("EVOLUTION_BACKOFF_BASE_SEGUNDOS", 1.0)
+    orcamento = max(0.0, _env_float("EVOLUTION_ORCAMENTO_ESPERA_SEGUNDOS", 10.0))
+    espera_gasta = 0.0
 
     ultimo_erro: str | None = None
     for tentativa in range(max_t):
@@ -184,6 +186,12 @@ def _enviar_texto_com_resiliencia(numero: str, texto: str) -> bool:
             exp = base_sleep * (2**tentativa)
             jitter = random.uniform(0, base_sleep * 0.25)
             sleep_s = min(exp + jitter, 60.0)
+            # B14: a espera total é limitada pelo orçamento. A thread do BackgroundTasks
+            # não pode ficar presa por minutos por causa de um backoff configurado alto.
+            restante_orcamento = orcamento - espera_gasta
+            if restante_orcamento <= 0:
+                break
+            sleep_s = min(sleep_s, restante_orcamento)
             logger.warning(
                 "Evolution: tentativa %s/%s falhou (%s); nova tentativa em %.2fs",
                 tentativa + 1,
@@ -192,6 +200,7 @@ def _enviar_texto_com_resiliencia(numero: str, texto: str) -> bool:
                 sleep_s,
             )
             time.sleep(sleep_s)
+            espera_gasta += sleep_s
 
     logger.warning("Evolution: esgotadas %s tentativas (%s)", max_t, ultimo_erro)
     return False
