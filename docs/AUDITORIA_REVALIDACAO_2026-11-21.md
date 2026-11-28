@@ -423,3 +423,75 @@ Esta seção não altera a classificação das seções 1–11, que descrevem o 
 ### 12.7 Resultado da integração
 
 Branch `claude/integracao-auditoria-2026-11-21` com 6 commits à frente da base (`6247d0b`, `f6a0770`, `062e65e`, `2bbe425`, `8d39ba7`, `c120de6`). Suíte completa com PostgreSQL: 505 passam, 0 pulados. Migrações validadas em banco novo, com idempotência na segunda execução. Documentos (este arquivo e `PROXIMOS_PASSOS.md`) ainda não commitados. Aguardando aprovação do usuário para a próxima etapa.
+
+---
+
+## 13. Sprint de 2026-11-27 — fechamento dos itens abertos (PR #3)
+
+**Escopo:** plano aprovado pelo usuário, executado na branch `claude/integracao-auditoria-2026-11-21` a partir do `9c6fd63`. Decisões já tomadas: **M3 sai só da documentação** (não implementar); o PR fica pronto para revisão e **o merge no `main` é do usuário**; a ação operacional do **bucket público de laudos** é do usuário e está fora da sprint.
+
+**Estado em uma frase:** dos 29 achados, 19 estão resolvidos na branch, 4 parciais e 6 abertos (ver §13.2). Nada foi mesclado, enviado para produção ou alterado no bucket.
+
+### 13.1 Commits
+
+| Hash | Itens | Testes novos |
+|---|---|---|
+| `3a7b1bd` | M4 (limite por obra em `/conferir`, `X-Correlation-ID`), B9 (CGNAT) | 8 (5 integração, 3 unitários) |
+| `3950f65` | B12 (migração `20261127120000_especificacoes_unica_bitola.sql`), B14 (teto de espera do WhatsApp) | 4 (3 integração, 1 unitário) |
+| `110f46e` | B4 (esperado/recebido no PWA), B6 (ícones 192/512), M7 (testes do vitest) | 8 vitest |
+| `5b59981` | B7 (`utcnow`), B8 (`ln=`/`dest=` do fpdf2 e negrito falso), B10 (chave `conclusao`) | 5 (guardas estáticas) |
+| `a1fe72d` | B13 (dia de São Paulo no dashboard) | 4 |
+| `6bb3696` | B1, B2, B3, B11, M3 | 5 (guardas) |
+| (este commit) | atualização da documentação (§13 e `PROXIMOS_PASSOS.md`) | — |
+
+Contagem de testes: **513 coletados no `9c6fd63`, 539 no HEAD desta sprint** (+26 pytest); vitest: 8 testes.
+
+### 13.2 Estado por item
+
+| Item | Antes (§3, baseline `main`) | Agora (branch) | Observação |
+|---|---|---|---|
+| M3 | NÃO RESOLVIDO | **RESOLVIDO** (escopo documentação) | `docs/ARQUITETURA.md` não apresenta mais `DICIONARIO_IA` nem sinônimos como ativos. A tabela `sinonimos` segue sem leitura nem escrita: dívida registrada, não implementação |
+| M4 | PARCIAL | **RESOLVIDO** | `/conferir` tem teto de consultas pagas por obra (`CONFERIR_LIMITE_POR_OBRA`, padrão 60 por 600 s, via `limite_tentativas`); respostas idempotentes não gastam cota; `X-Correlation-ID` aceito quando seguro, senão gerado, devolvido no cabeçalho e nos logs. **Ressalva:** contador em memória por processo, como o de login: com N workers o teto efetivo é N × limite |
+| M7 | PARCIAL | **PARCIAL** | `npm run test` passa (8 testes reais, script mantido). **Pendência:** `.github/workflows/testes.yml` roda só o pytest; vitest e `build:css` não estão no CI |
+| B1 | NÃO RESOLVIDO | **RESOLVIDO** | linhas vazias em excesso removidas de `relatorio_semanal_main.py` (223 → 182 linhas) |
+| B2 | NÃO RESOLVIDO | **RESOLVIDO** | docstring de `comparador_cimento.py` descreve o estado atual |
+| B3 | NÃO RESOLVIDO | **RESOLVIDO** | checklist manda aplicar todas as migrações em ordem (`supabase db push` ou `scripts/apply_migrations.py`) |
+| B4 | NÃO RESOLVIDO | **RESOLVIDO** | `renderizarResultado` mostra Esperado, Recebido na NF e Análise, com travessão para campo ausente |
+| B6 | PARCIAL | **RESOLVIDO** | manifest com ícones 192 e 512. **Ressalva:** os PNGs são sólidos provisórios; trocar pela arte da marca |
+| B7 | NÃO RESOLVIDO | **RESOLVIDO** | `datetime.now(timezone.utc)` em `laudo_pdf.py`; guarda impede `utcnow` no app |
+| B8 | NÃO RESOLVIDO | **RESOLVIDO** | `new_x`/`new_y` e `output()` no lugar de `ln=`/`dest=`. O negrito de DejaVu, que nunca foi negrito real (mesmo TTF), passa a ser regular: visual igual ao que já era |
+| B9 | PARCIAL | **RESOLVIDO** | `100.64.0.0/10` bloqueado na validação literal e no DNS (teste de download sem conexão) |
+| B10 | NÃO RESOLVIDO | **RESOLVIDO** | `conferente.py` grava `conclusao`; o PDF e o PWA leem a chave nova e aceitam `conclusão` como alias. **Dados já gravados** mantêm a chave antiga e são lidos pelo alias |
+| B11 | NÃO RESOLVIDO | **RESOLVIDO** | `:root` e `body` em `@layer base`; `.sr-only` vem do Tailwind; `app.css` recompilado |
+| B12 | NÃO RESOLVIDO | **RESOLVIDO** | índice único parcial `(obra_id, bitola_mm) WHERE bitola_mm IS NOT NULL`; a migração aborta com a lista de duplicatas e não apaga dados |
+| B13 | NÃO RESOLVIDO | **RESOLVIDO** | intervalo de dia em `America/Sao_Paulo`, convertido para UTC só na consulta (`dashboard/intervalo.py`) |
+| B14 | NÃO RESOLVIDO | **RESOLVIDO com ressalva** | a espera total de retentativas é limitada a `EVOLUTION_ORCAMENTO_ESPERA_SEGUNDOS` (padrão 10 s). A thread do `BackgroundTasks` ainda pode ficar ocupada até esse teto somado aos timeouts HTTP (30 s por tentativa). Retentativa assíncrona ou fila segue como melhoria |
+| A2 | PARCIAL | sem mudança nesta sprint | código já usa `False` como fallback em `conferente.py`; não alterado, conforme o plano |
+| A5, M8 | PARCIAL | sem mudança nesta sprint | fora do plano |
+| A1, A3, A4, A6, M1, M9 | NÃO RESOLVIDO no `main` | sem mudança nesta sprint | tratados pela integração (§12); não reverificados aqui |
+
+**Contagem (29 achados, estado na branch):** RESOLVIDO **19** (M2, M3, M4, M5, M6, B1, B2, B3, B4, B5, B6, B7, B8, B9, B10, B11, B12, B13, B14); PARCIAL **4** (A2, A5, M7, M8); NÃO RESOLVIDO **6** (A1, A3, A4, A6, M1, M9, em aberto no `main` mas tratados pela integração, §12). Esses seis não estão contados como resolvidos porque esta sprint não os reverificou.
+
+### 13.3 Verificação
+
+| Verificação | Resultado |
+|---|---|
+| Suíte completa do backend, PostgreSQL 16 em container descartável novo (porta 55442) | **539 passed, 0 failed, 0 skipped**, 209 s |
+| Teste de corrida `test_idempotency_key_em_corrida_grava_uma_unica_evidencia`, 3 execuções | 3 de 3 passam (119 s, 6 s, 10 s; a primeira execução concentra o setup do banco) |
+| Migrações em banco novo (porta 55443), execução 1 | 34 aplicadas, exit 0 |
+| Migrações em banco novo, execução 2 | 0 pendentes, exit 0 |
+| Migração B12 com duplicatas de propósito (porta 55444) | sem duplicata: aplica. Com duplicata: **aborta, exit 1**, mensagem com obra e bitola. Após remover a duplicata: aplica, exit 0; repetição com 0 pendentes |
+| `npm run build:css` (pwa) | exit 0 |
+| `npm run test` (pwa) | exit 0, 8 testes |
+| SSRF (CGNAT literal e por DNS), limite por obra, correlação, espera do WhatsApp | cobertos pelos testes acima; a revisão do diff foi feita por leitura |
+| **Não verificado:** tela de conferência e instalação do PWA no navegador; dashboard rodando com NF perto da meia-noite | não executado nesta sprint (sem navegador e sem o dashboard no ar) |
+
+### 13.4 Pendências
+
+1. **Role da `DATABASE_URL` de produção (plano, passo 2):** pendente de resposta do usuário. Se for `postgres` com `BYPASSRLS`, o RLS não protege a API e isso bloqueia a afirmação de isolamento multiempresa. Nada foi alterado em produção.
+2. **Bucket público de laudos:** ação operacional do usuário, fora da sprint.
+3. **M7 no CI:** incluir `npm run test` e `npm run build:css` em `.github/workflows/testes.yml`.
+4. **Ordem da migração `20261114120000_fila_reaper.sql`:** a aplicação em banco novo, na ordem pelo nome, passou. Em produção, validar antes de aplicar (§12.6).
+5. **Revisão e merge do PR #3:** aguardando o usuário. Nada foi mesclado no `main`.
+6. **Ícones do PWA:** trocar os PNGs provisórios pela arte da marca.
+7. **Espera do primeiro teste de corrida** (119 s nesta sprint): observada, não explicada.
