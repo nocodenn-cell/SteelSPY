@@ -7,16 +7,21 @@ from __future__ import annotations
 
 import io
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 import httpx
 from fpdf import FPDF
 
-from app.utils.url_seguras import URLNaoPermitidaError, validar_url_imagem_publica
+from app.utils.url_seguras import baixar_foto_segura
 
 FONT_PATH = Path(__file__).resolve().parent.parent.parent / "assets" / "fonts" / "DejaVuSans.ttf"
+
+def _negrito(font: str) -> str:
+    """DejaVu tem um único TTF (regular). Negrito vira regular, sem fingir um estilo B."""
+    return "" if font == "DejaVu" else "B"
+
 EMISSOR_PADRAO = os.getenv("LAUDO_EMISSOR_NOME", "CheckObra AI")
 LOGO_OBRA_PATH = os.getenv("LAUDO_LOGO_OBRA_PATH", "")
 LOGO_SISTEMA_PATH = os.getenv("LAUDO_LOGO_SISTEMA_PATH", "")
@@ -131,17 +136,8 @@ def _veredito_bloco(status: str) -> tuple[str, str, tuple[int, int, int]]:
 
 
 def _carregar_imagem_url(url: str, timeout: float = 15.0) -> bytes | None:
-    try:
-        validar_url_imagem_publica(url)
-    except URLNaoPermitidaError:
-        return None
-    try:
-        r = httpx.get(url, timeout=timeout, follow_redirects=True)
-        if r.status_code == 200 and r.content[:4] in (b"\xff\xd8\xff", b"\x89PNG", b"GIF8"):
-            return r.content
-    except httpx.RequestError:
-        return None
-    return None
+    """Baixa a foto da NF com validação de cada redirect e fixação de IP (P-07)."""
+    return baixar_foto_segura(url, timeout=timeout)
 
 
 def _proc_txt(ctx: dict[str, Any]) -> str:
@@ -150,27 +146,27 @@ def _proc_txt(ctx: dict[str, Any]) -> str:
         return proc.isoformat()
     if proc:
         return str(proc)
-    return datetime.utcnow().isoformat() + "Z"
+    return datetime.now(timezone.utc).isoformat()
 
 
 def _faixa_ambiente_testes(pdf: FPDF, font: str) -> None:
     pdf.set_fill_color(255, 210, 100)
     pdf.rect(0, 0, pdf.w, 10, "F")
     pdf.set_xy(pdf.l_margin, 2)
-    pdf.set_font(font, "B", 9)
+    pdf.set_font(font, _negrito(font), 9)
     pdf.set_text_color(65, 40, 0)
     pdf.cell(
         0,
         6,
         "AMBIENTE DE TESTES — SEM VALOR DE BLOQUEIO OPERACIONAL",
-        ln=1,
+        new_x="LMARGIN", new_y="NEXT",
     )
     pdf.set_text_color(0, 0, 0)
 
 
 def _marca_dagua_testes(pdf: FPDF, font: str) -> None:
     with pdf.rotation(32, x=pdf.w / 2, y=pdf.h / 2):
-        pdf.set_font(font, "B", 40)
+        pdf.set_font(font, _negrito(font), 40)
         pdf.set_text_color(238, 238, 238)
         pdf.set_xy(30, 145)
         pdf.cell(0, 10, "TESTES")
@@ -188,13 +184,13 @@ def _grade_blocos_autoridade(pdf: FPDF, font: str, ctx: dict[str, Any]) -> None:
     nfe_body = f"Nota nº {ctx.get('numero_nf', '—')}\nSérie {ctx.get('serie_nf', '—')}"
     proc_txt = _proc_txt(ctx)
 
-    pdf.set_font(font, "B", 11)
-    pdf.cell(0, 6, "1. Identificação (blocos de autoridade)", ln=1)
+    pdf.set_font(font, _negrito(font), 11)
+    pdf.cell(0, 6, "1. Identificação (blocos de autoridade)", new_x="LMARGIN", new_y="NEXT")
     pdf.set_font(font, "", 8)
 
     y = pdf.get_y()
     pdf.set_xy(x0, y)
-    pdf.set_font(font, "B", 8)
+    pdf.set_font(font, _negrito(font), 8)
     pdf.cell(wcol, h_hdr, "Obra", border=1)
     pdf.set_xy(x0 + wcol, y)
     pdf.cell(wcol, h_hdr, "Fornecedor (emitente)", border=1)
@@ -209,7 +205,7 @@ def _grade_blocos_autoridade(pdf: FPDF, font: str, ctx: dict[str, Any]) -> None:
 
     y2 = pdf.get_y()
     pdf.set_xy(x0, y2)
-    pdf.set_font(font, "B", 8)
+    pdf.set_font(font, _negrito(font), 8)
     pdf.cell(wcol, h_hdr, "Data / hora do processamento", border=1)
     pdf.set_xy(x0 + wcol, y2)
     pdf.cell(wcol, h_hdr, "NF-e", border=1)
@@ -229,8 +225,8 @@ def _anexo_evidencia_recebimento(pdf: FPDF, font: str, ctx: dict[str, Any]) -> N
     foto = ctx.get("foto_url")
     if not foto:
         return
-    pdf.set_font(font, "B", 11)
-    pdf.cell(0, 6, "Anexo: Evidência de Recebimento", ln=1)
+    pdf.set_font(font, _negrito(font), 11)
+    pdf.cell(0, 6, "Anexo: Evidência de Recebimento", new_x="LMARGIN", new_y="NEXT")
     pdf.set_font(font, "", 8)
     data = _carregar_imagem_url(str(foto))
     if data:
@@ -260,7 +256,6 @@ def gerar_laudo_pdf_bytes(ctx: dict[str, Any]) -> bytes:
 
     if FONT_PATH.is_file():
         pdf.add_font("DejaVu", "", str(FONT_PATH))
-        pdf.add_font("DejaVu", "B", str(FONT_PATH))
         font = "DejaVu"
     else:
         font = "helvetica"
@@ -284,7 +279,7 @@ def gerar_laudo_pdf_bytes(ctx: dict[str, Any]) -> bytes:
             pass
     pdf.set_y(y0 + 22)
 
-    pdf.set_font(font, "B", 14)
+    pdf.set_font(font, _negrito(font), 14)
     pdf.multi_cell(0, 8, "RELATÓRIO DE CONFORMIDADE DE RECEBIMENTO TÉCNICO", align="C")
     pdf.ln(2)
     pdf.set_font(font, "", 9)
@@ -296,26 +291,26 @@ def gerar_laudo_pdf_bytes(ctx: dict[str, Any]) -> bytes:
     pdf.set_x(pdf.l_margin)
 
     pdf.set_font(font, "", 9)
-    pdf.cell(0, 5, f"ID do laudo (rastreio): {ctx.get('laudo_id', '—')}", ln=1)
+    pdf.cell(0, 5, f"ID do laudo (rastreio): {ctx.get('laudo_id', '—')}", new_x="LMARGIN", new_y="NEXT")
     pdf.ln(2)
     _grade_blocos_autoridade(pdf, font, ctx)
     chave_fmt = ctx.get("chave_formatada") or ctx.get("chave_acesso", "")
     pdf.set_font(font, "", 9)
-    pdf.cell(0, 5, f"Chave de acesso: {chave_fmt}", ln=1)
+    pdf.cell(0, 5, f"Chave de acesso: {chave_fmt}", new_x="LMARGIN", new_y="NEXT")
     url = ctx.get("url_consulta_sefaz", SEFAZ_PORTAL)
     pdf.set_text_color(0, 80, 160)
-    pdf.cell(0, 5, f"Consulta nacional NF-e: {url}", ln=1, link=url)
+    pdf.cell(0, 5, f"Consulta nacional NF-e: {url}", new_x="LMARGIN", new_y="NEXT", link=url)
     pdf.set_text_color(0, 0, 0)
     pdf.ln(3)
     pdf.set_x(pdf.l_margin)
 
     # --- Veredito
-    pdf.set_font(font, "B", 11)
-    pdf.cell(0, 6, "2. Veredito técnico", ln=1)
+    pdf.set_font(font, _negrito(font), 11)
+    pdf.cell(0, 6, "2. Veredito técnico", new_x="LMARGIN", new_y="NEXT")
     status = str(ctx.get("status", ""))
     titulo, subtitulo, rgb = _veredito_bloco(status)
     pdf.set_fill_color(*rgb)
-    pdf.set_font(font, "B", 11)
+    pdf.set_font(font, _negrito(font), 11)
     pdf.set_x(pdf.l_margin)
     pdf.multi_cell(0, 7, titulo, fill=True)
     pdf.set_font(font, "", 9)
@@ -328,7 +323,7 @@ def gerar_laudo_pdf_bytes(ctx: dict[str, Any]) -> bytes:
         pdf.multi_cell(0, 5, f"Classificação do alerta: {ctx.get('alerta')}")
         pdf.set_x(pdf.l_margin)
     if ctx.get("mensagem_modo_aprendizado"):
-        pdf.set_font(font, "B", 9)
+        pdf.set_font(font, _negrito(font), 9)
         pdf.multi_cell(0, 5, "Modo Aprendizado — comunicado ao fiscal:")
         pdf.set_x(pdf.l_margin)
         pdf.set_font(font, "", 9)
@@ -338,10 +333,10 @@ def gerar_laudo_pdf_bytes(ctx: dict[str, Any]) -> bytes:
     pdf.set_x(pdf.l_margin)
 
     # --- Tabela
-    pdf.set_font(font, "B", 11)
-    pdf.cell(0, 6, "3. Comparação técnica (especificação x NF-e)", ln=1)
+    pdf.set_font(font, _negrito(font), 11)
+    pdf.cell(0, 6, "3. Comparação técnica (especificação x NF-e)", new_x="LMARGIN", new_y="NEXT")
     col_w = (32, 44, 58, 49)
-    pdf.set_font(font, "B", 7)
+    pdf.set_font(font, _negrito(font), 7)
     headers = ("Item / material", "Especificado (projeto)", "Recebido (NF-e)", "Conclusão")
     for i, h in enumerate(headers):
         pdf.cell(col_w[i], 7, h, border=1, align="C")
@@ -353,7 +348,7 @@ def gerar_laudo_pdf_bytes(ctx: dict[str, Any]) -> bytes:
         item = str(row.get("item", "—"))[:32]
         esp = str(row.get("esperado", "—"))[:38]
         rec = str(row.get("recebido", "—"))[:52]
-        conc = str(row.get("conclusão", row.get("conclusao", "—")))[:42]
+        conc = str(row.get("conclusao", row.get("conclusão", "—")))[:42]  # "conclusão": alias legado (B10)
         pdf.cell(col_w[0], 6, item, border=1)
         pdf.cell(col_w[1], 6, esp, border=1)
         pdf.cell(col_w[2], 6, rec, border=1)
@@ -364,22 +359,22 @@ def gerar_laudo_pdf_bytes(ctx: dict[str, Any]) -> bytes:
     # --- Motivos (texto)
     motivos = ctx.get("motivos") or []
     if motivos:
-        pdf.set_font(font, "B", 10)
-        pdf.cell(0, 6, "Detalhamento (motivos do sistema)", ln=1)
+        pdf.set_font(font, _negrito(font), 10)
+        pdf.cell(0, 6, "Detalhamento (motivos do sistema)", new_x="LMARGIN", new_y="NEXT")
         pdf.set_font(font, "", 8)
         for m in motivos[:30]:
             pdf.set_x(pdf.l_margin)
             pdf.multi_cell(0, 4, f"• {m}")
         if len(motivos) > 30:
-            pdf.cell(0, 5, f"… (+{len(motivos) - 30} linhas)", ln=1)
+            pdf.cell(0, 5, f"… (+{len(motivos) - 30} linhas)", new_x="LMARGIN", new_y="NEXT")
         pdf.ln(2)
 
     # --- Override
     ov = ctx.get("override_info") or {}
     hist = ov.get("historico") or []
     if hist:
-        pdf.set_font(font, "B", 11)
-        pdf.cell(0, 6, "4. Histórico de decisão / override", ln=1)
+        pdf.set_font(font, _negrito(font), 11)
+        pdf.cell(0, 6, "4. Histórico de decisão / override", new_x="LMARGIN", new_y="NEXT")
         pdf.set_font(font, "", 9)
         for entrada in hist[-5:]:
             if not isinstance(entrada, dict):
@@ -406,7 +401,7 @@ def gerar_laudo_pdf_bytes(ctx: dict[str, Any]) -> bytes:
         "Não substitui parecer do responsável técnico nem cláusulas contratuais.",
     )
 
-    out = pdf.output(dest="S")
+    out = pdf.output()
     if isinstance(out, (bytes, bytearray)):
         return bytes(out)
     return str(out).encode("latin-1")

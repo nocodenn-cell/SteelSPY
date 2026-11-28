@@ -54,37 +54,44 @@ class LimiteTentativas:
         self._falhas: dict[str, deque[float]] = defaultdict(deque)
         self._lock = threading.Lock()
 
-    def _podar(self, chave: str, agora: float) -> deque[float]:
+    def _podar(self, chave: str, agora: float, janela: int | None = None) -> deque[float]:
         fila = self._falhas[chave]
-        limite = agora - janela_segundos()
+        limite = agora - (janela if janela is not None else janela_segundos())
         while fila and fila[0] < limite:
             fila.popleft()
         return fila
 
-    def bloqueado(self, chave: str) -> tuple[bool, int]:
+    def bloqueado(
+        self, chave: str, *, maximo: int | None = None, janela: int | None = None
+    ) -> tuple[bool, int]:
         """
         Retorna `(bloqueado, segundos_restantes)`.
 
         `segundos_restantes` é quanto falta para a tentativa mais antiga sair da
         janela — é o valor certo para o header `Retry-After`.
+
+        `maximo` e `janela` substituem os padrões de login (uso por outros
+        limites, como o custo por obra em /conferir).
         """
         agora = time.monotonic()
+        janela_usada = janela if janela is not None else janela_segundos()
         with self._lock:
-            fila = self._podar(chave, agora)
-            limite = max_falhas()
+            fila = self._podar(chave, agora, janela_usada)
+            limite = maximo if maximo is not None else max_falhas()
             if len(fila) < limite:
                 return False, 0
             mais_antiga = fila[0]
-            restante = int(max(1, (mais_antiga + janela_segundos()) - agora))
+            restante = int(max(1, (mais_antiga + janela_usada) - agora))
             return True, restante
 
-    def registrar_falha(self, chave: str) -> None:
+    def registrar_falha(self, chave: str, *, janela: int | None = None) -> None:
+        """Registra um evento na janela (falha de login, ou uso que tem custo)."""
         agora = time.monotonic()
         with self._lock:
             # Poda defensiva: impede crescimento sem limite em ataque distribuído.
             if len(self._falhas) > MAX_CHAVES:
                 self._falhas.clear()
-            self._podar(chave, agora).append(agora)
+            self._podar(chave, agora, janela).append(agora)
 
     def limpar(self, chave: str) -> None:
         with self._lock:
@@ -118,3 +125,29 @@ def chave_email(email: str) -> str:
 
 def chave_ip(ip: str | None) -> str:
     return f"ip:{(ip or 'sem-ip').strip()}"
+
+
+# ---------------------------------------------------------------------------
+# Custo por obra em /conferir (M4)
+# ---------------------------------------------------------------------------
+#
+# Cada consulta que chega à API da NFe.io custa dinheiro. Sem teto, uma obra
+# (ou uma credencial vazada de obra) consome a cota inteira. O limite conta
+# apenas consultas que vão de fato à API (não as respostas idempotentes do banco).
+
+CONFERIR_MAX_PADRAO = 60
+CONFERIR_JANELA_PADRAO_SEGUNDOS = 600
+
+
+def conferir_max_por_obra() -> int:
+    return _env_int("CONFERIR_LIMITE_POR_OBRA", CONFERIR_MAX_PADRAO, minimo=1, maximo=100_000)
+
+
+def conferir_janela_segundos() -> int:
+    return _env_int(
+        "CONFERIR_JANELA_SEGUNDOS", CONFERIR_JANELA_PADRAO_SEGUNDOS, minimo=30, maximo=86_400
+    )
+
+
+def chave_conferir_obra(obra_id: str) -> str:
+    return f"conferir:obra:{(obra_id or '').strip().lower()}"

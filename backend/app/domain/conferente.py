@@ -324,7 +324,8 @@ def _atualizar_alerta_por_motivos(alerta_atual: TipoAlerta, motivos: list[str]) 
 class ConfigObraConferente:
     aceita_similar: bool = False
     margem_tolerancia_float: float = 0.02
-    modo_aprendizado: bool = True
+    # Padrão igual ao da coluna obras.modo_aprendizado (migração 20261103150300): FALSE.
+    modo_aprendizado: bool = False
 
 
 _UN_METROS = {"M", "METRO", "METROS", "ML", "MT", "M1"}
@@ -358,7 +359,7 @@ def _config_conferente(config_obra: ConfigObraConferente | dict[str, Any]) -> Co
     return ConfigObraConferente(
         aceita_similar=bool(d.get("aceita_similar", False)),
         margem_tolerancia_float=float(d.get("margem_tolerancia_float", 0.02)),
-        modo_aprendizado=bool(d.get("modo_aprendizado", True)),
+        modo_aprendizado=bool(d.get("modo_aprendizado", False)),
     )
 
 
@@ -491,7 +492,7 @@ def conferir_nf_multiplos_itens(
                     "item": "—",
                     "esperado": "—",
                     "recebido": "—",
-                    "conclusão": "NF sem itens mapeáveis",
+                    "conclusao": "NF sem itens mapeáveis",
                 }
             ],
             "motivos": ["NF sem itens para conferência."],
@@ -511,7 +512,7 @@ def conferir_nf_multiplos_itens(
                     "item": "—",
                     "esperado": "Cadastro de especificações",
                     "recebido": "Itens na NF",
-                    "conclusão": "Obra sem especificações cadastradas",
+                    "conclusao": "Obra sem especificações cadastradas",
                 }
             ],
             "motivos": ["Obra sem especificações cadastradas."],
@@ -572,7 +573,7 @@ def conferir_nf_multiplos_itens(
                     "item": rotulo,
                     "esperado": "Linha na especificação (categoria e atributos)",
                     "recebido": f"{_bitola_txt(bitola_nf)} / {marca_nf} / {_trecho_qtd_unidade(item_lo)}",
-                    "conclusão": "Material não solicitado para esta obra",
+                    "conclusao": "Material não solicitado para esta obra",
                 }
             )
             itens_processados.append(
@@ -644,7 +645,7 @@ def conferir_nf_multiplos_itens(
                     "item": rotulo,
                     "esperado": f"{tipo_e} / previsto {esp.get('quantidade_prevista') or esp.get('qtd_planejada_metros') or '—'}",
                     "recebido": f"{item_lo.get('tipo_cimento') or item_lo.get('dimensoes') or '—'} / {_trecho_qtd_unidade(item_lo)}",
-                    "conclusão": conclusao,
+                    "conclusao": conclusao,
                 }
             )
         else:
@@ -653,7 +654,7 @@ def conferir_nf_multiplos_itens(
                     "item": str(mat),
                     "esperado": f"{bit_esp} mm / {marca_e}",
                     "recebido": f"{_bitola_txt(bitola_nf)} / {marca_r} / {_trecho_qtd_unidade(item_lo)}",
-                    "conclusão": conclusao,
+                    "conclusao": conclusao,
                 }
             )
         motivos_flat.extend(f"[{rotulo}] {m}" for m in motivos_item)

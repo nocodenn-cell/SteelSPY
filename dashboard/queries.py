@@ -4,11 +4,11 @@ Consultas somente leitura ao Postgres (mesmo schema da API).
 
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta, time, timezone
-
 import pandas as pd
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
+
+from dashboard.intervalo import intervalo_utc_dias
 
 
 def get_engine(database_url: str) -> Engine:
@@ -33,9 +33,8 @@ def carregar_nfe_itens_periodo(
     d0: date,
     d1: date,
 ) -> pd.DataFrame:
-    """Intervalo [d0 00:00 UTC, d1+1 00:00 UTC) — inclusive nos dias escolhidos."""
-    start = datetime.combine(d0, time.min, tzinfo=timezone.utc)
-    end_excl = datetime.combine(d1 + timedelta(days=1), time.min, tzinfo=timezone.utc)
+    """Dias escolhidos inclusive, no horário de São Paulo (B13)."""
+    start, end_excl = intervalo_utc_dias(d0, d1)
 
     q = text(
         """
@@ -50,7 +49,9 @@ def carregar_nfe_itens_periodo(
           ni.marca_recebida,
           ni.quantidade_recebida,
           ni.unidade_recebida,
-          ni.status_item,
+          -- status efetivo: item aceito por override conta como VERDE. O fato
+          -- técnico continua em ni.status_item.
+          CASE WHEN ni.override_aplicado THEN 'VERDE' ELSE ni.status_item END AS status_item,
           ni.especificacao_id::text AS especificacao_id,
           e.qtd_planejada_metros,
           e.bitola_mm AS esp_bitola_mm,
@@ -79,8 +80,7 @@ def carregar_nfes_resumo(
     d0: date,
     d1: date,
 ) -> pd.DataFrame:
-    start = datetime.combine(d0, time.min, tzinfo=timezone.utc)
-    end_excl = datetime.combine(d1 + timedelta(days=1), time.min, tzinfo=timezone.utc)
+    start, end_excl = intervalo_utc_dias(d0, d1)
 
     q = text(
         """

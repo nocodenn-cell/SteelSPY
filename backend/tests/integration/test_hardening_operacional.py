@@ -33,8 +33,6 @@ from test_evidencias import (  # fixtures e helpers já usados na suíte de evid
     usuarios,  # noqa: F401  (fixture)
 )
 
-from app.services import armazenamento as arm
-
 # Porta sem nada escutando: a recusa vem do sistema operacional, não de um mock.
 PORTA_FECHADA = 59432
 URL_FORA_DO_AR = (
@@ -141,36 +139,44 @@ def test_pool_esgotado_responde_503(cliente: Any, sql_app: Any) -> None:
 # ---------------------------------------------------------------------------
 
 
-class _BackendComBarreira:
+class _SessaoComBarreiraNaChecagem:
     """
-    Sincroniza as threads logo antes do INSERT de cada evidência.
+    Segura cada requisição logo antes da checagem de idempotência até todas chegarem.
 
-    Sem isto a corrida dependia de sorte: com a barreira dentro da gravação, todas
-    as requisições passam pelo `SELECT` de idempotência ainda vazio e disputam o
-    índice único — que é exatamente o caminho que se quer provar, não o reenvio
-    sequencial que já tem teste.
+    Por que antes do `SELECT` e não depois da gravação dos arquivos: se a barreira
+    ficar depois da checagem, uma requisição que chega tarde encontra a evidência
+    já commitada, retorna sem passar pela barreira, e as demais esperam por ela até
+    estourar. Com a barreira *antes* da checagem, nenhuma requisição commita antes
+    de todas terem passado, então todas leem a tabela vazia e disputam o índice
+    único — o caminho de corrida que o teste quer provar.
+
+    Só a primeira checagem de cada sessão para na barreira: a releitura feita após
+    o `IntegrityError` usa o mesmo SQL e não pode esperar outra vez.
     """
 
-    def __init__(self, real: Any, barreira: threading.Barrier) -> None:
+    def __init__(self, real: Session, barreira: threading.Barrier) -> None:
         self.real = real
         self.barreira = barreira
+        self._sincronizada = False
 
-    def gravar(self, chave: str, dados: bytes) -> None:
-        self.real.gravar(chave, dados)
-        self.barreira.wait(timeout=30)
+    def execute(self, statement: Any, *args: Any, **kwargs: Any) -> Any:
+        if not self._sincronizada and "idempotency_key = :chave" in str(statement):
+            self._sincronizada = True
+            # Sem `except`: se alguma requisição não chegar, a barreira quebra e a
+            # requisição falha alto. Não há mais best-effort que mascare a corrida.
+            self.barreira.wait(timeout=30)
+        return self.real.execute(statement, *args, **kwargs)
 
-    def ler(self, chave: str) -> bytes:
-        return self.real.ler(chave)
-
-    def existe(self, chave: str) -> bool:
-        return self.real.existe(chave)
-
-    def remover(self, chave: str) -> None:
-        self.real.remover(chave)
+    def __getattr__(self, nome: str) -> Any:
+        return getattr(self.real, nome)
 
 
 def test_idempotency_key_em_corrida_grava_uma_unica_evidencia(
-    cliente: Any, usuarios: dict[str, Any], storage: Any, sql_owner: Any
+    cliente: Any,
+    usuarios: dict[str, Any],
+    storage: Any,
+    sql_owner: Any,
+    sessao_app_factory: Any,
 ) -> None:
     csrf = _login(cliente, usuarios["emails"]["fiscal"])
     obra = str(usuarios["obra_a"])
@@ -178,7 +184,12 @@ def test_idempotency_key_em_corrida_grava_uma_unica_evidencia(
     imagem = imagem_png()
     paralelas = 4
 
-    arm.definir_backend(_BackendComBarreira(storage, threading.Barrier(paralelas)))
+    barreira = threading.Barrier(paralelas)
+
+    def _fabrica() -> Any:
+        return _SessaoComBarreiraNaChecagem(sessao_app_factory(), barreira)
+
+    _override_de_sessao(cliente, _fabrica)
     with ThreadPoolExecutor(max_workers=paralelas) as pool:
         respostas = list(
             pool.map(

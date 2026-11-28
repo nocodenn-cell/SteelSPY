@@ -8,6 +8,151 @@ O projeto **não segue versionamento semântico ainda** — não há tag nem rel
 
 ---
 
+## [Não lançado] — 2026-11-21 — P-11: padrão do modo de aprendizado no código
+
+### Alterado
+
+- `app/domain/conferente.py`: `ConfigObraConferente.modo_aprendizado` e o fallback de `_config_conferente`
+  passam de `True` para `False`, igual ao padrão da coluna `obras.modo_aprendizado` (migração
+  `20261103150300`). Só afeta chamadas que não informam o campo. Obras existentes lidas do banco não mudam.
+
+### Testes
+
+- `tests/test_aprendizado.py::test_padrao_do_modo_aprendizado_e_desligado_como_no_banco`.
+- Suíte completa com PostgreSQL: **494 passam, 0 pulados**.
+
+### Não alterado
+
+- Obras já existentes com `modo_aprendizado = TRUE` (a migração as deixou assim de propósito).
+
+## [Não lançado] — 2026-11-21 — CSV semanal com `itens_vermelhos_aceitos`
+
+### Adicionado
+
+- `relatorio_semanal.montar_csv_bytes`: coluna `itens_vermelhos_aceitos` no fim do arquivo, lida de
+  `itens_resumo.vermelhos_aceitos` (gravado pelo override de P-09). Fica vazia quando a NF nunca foi aceita.
+- As colunas anteriores mantêm a posição, então quem lê o arquivo por índice não quebra.
+
+### Testes
+
+- `tests/test_relatorio_semanal.py`: 2 testes novos (cabeçalho e valores; campo vazio sem aceite).
+- Suíte completa com PostgreSQL: **493 passam, 0 pulados**.
+
+## [Não lançado] — 2026-11-21 — fila de retentativa com `tipo`
+
+### Corrigido
+
+- `fila_nfe` era única por `(obra, chave)`. Com entrada e devolução na mesma chave, as duas retentativas
+  disputavam uma linha, e o worker podia completar a conferência errada. A limitação registrada em P-08 foi
+  resolvida.
+
+### Alterado
+
+- `supabase/migrations/20261121140000_fila_nfe_tipo.sql`: coluna `fila_nfe.tipo` (padrão `entrada`), chave
+  única `(obra_id, chave_acesso, tipo)` e recriação de `fila_reivindicar_lote`, que passa a devolver `tipo`.
+  Não aplicada em produção.
+- `enfileirar_apos_falha_xml` recebe `tipo`; `POST /conferir` passa `body.tipo`.
+- `ao_sucesso` do worker recebe `tipo`; `aplicar_xml_disponivel_fila` busca `nfe_logs` por `(obra, chave, tipo)`
+  e não usa mais a heurística de preferir `PENDENTE`.
+
+### Testes
+
+- `tests/integration/test_idempotencia_tipo.py` — 2 testes novos: entrada e devolução com a mesma chave têm
+  linhas próprias na fila; o worker completa só a devolução e deixa a entrada pendente.
+- Mutação (callback sempre `entrada`): 1 teste falhou. Revertida.
+- Suíte completa com PostgreSQL: **491 passam, 0 pulados**.
+
+## [Não lançado] — 2026-11-21 — P-09: override propaga para itens e resumo
+
+### Corrigido
+
+- Após o aceite, `nfe_logs` ficava VERDE, mas `nfe_itens` continuava VERMELHO, `itens_resumo` mantinha
+  vermelhos e o replay de `/conferir` devolvia `status: VERDE` com `alerta: MATERIAL_NAO_SOLICITADO` (A3).
+  O dashboard contava itens vermelhos de NF verde e o relatório semanal contradizia o status.
+
+### Alterado
+
+- `supabase/migrations/20261121130000_nfe_itens_override.sql`: nova coluna `nfe_itens.override_aplicado`
+  (padrão `FALSE`). Não aplicada em produção.
+- `POST /override`: marca os itens VERMELHO com `override_aplicado`, mantém `status_item` como fato técnico e
+  reescreve `itens_resumo` com `vermelhos = 0`, `verdes` somado e `vermelhos_aceitos` guardando a contagem
+  anterior.
+- Replay de `POST /conferir`: a resposta traz `status` (efetivo), `status_tecnico` (regra) e `override`
+  (aplicado e último aceite).
+- `dashboard/queries.py`: o status exibido de item aceito é VERDE; o valor técnico continua em `ni.status_item`.
+
+### Testes
+
+- `tests/integration/test_auth.py::test_override_propaga_para_itens_e_resumo_e_preserva_o_fato_tecnico`:
+  verifica item, resumo, replay e identidade do aceite.
+- Mutação (sem marcar `override_aplicado`): o teste falhou. Revertida.
+- Suíte completa com PostgreSQL: **489 passam, 0 pulados**.
+
+### Não verificado
+
+- O dashboard (Streamlit) não tem suíte de testes. A alteração em `dashboard/queries.py` foi checada apenas
+  por sintaxe.
+
+### Limitação
+
+- O CSV do relatório semanal ainda não tem coluna para `vermelhos_aceitos`.
+
+## [Não lançado] — 2026-11-21 — P-08: idempotência de conferência considera `tipo`
+
+### Corrigido
+
+- `POST /conferir` buscava a conferência existente só por `(obra, chave)`. Uma devolução com a mesma chave da
+  entrada recebia o snapshot da entrada e nunca era registrada (A4 de `ANALISE_PROJETO.md`).
+- Além disso, o `ON CONFLICT (obra_id, chave_acesso)` faria a devolução **sobrescrever** a entrada, trocando
+  `tipo` para `devolucao`.
+
+### Alterado
+
+- `supabase/migrations/20261121120000_nfe_logs_unique_tipo.sql`: troca `UNIQUE (obra_id, chave_acesso)` por
+  `UNIQUE (obra_id, chave_acesso, tipo)` em `nfe_logs`. A restrição nova é implicada pela antiga, então
+  nenhuma linha existente a viola. Não foi aplicada em produção.
+- `app/routers/conferencia.py` e `app/services/conferencia_persist.py`: busca de idempotência e `ON CONFLICT`
+  usam `tipo`.
+- `aplicar_xml_disponivel_fila` prefere a linha `PENDENTE` quando há entrada e devolução com a mesma chave.
+
+### Limitação conhecida
+
+- `fila_nfe` continua com `UNIQUE (obra_id, chave_acesso)` e não guarda `tipo`. Retentativa de devolução com a
+  mesma chave de uma entrada pendente ainda compartilha a linha da fila. O caminho síncrono (XML disponível)
+  está corrigido. Para a fila, `fila_reivindicar_lote` precisa devolver `tipo`.
+
+### Testes
+
+- `tests/integration/test_idempotencia_tipo.py` — 4 testes: devolução vira conferência própria, entrada repetida
+  segue idempotente, devolução repetida devolve a própria conferência e o banco recusa duas entradas iguais.
+- Mutação (busca sem `tipo`): 2 testes falharam. Revertida.
+- Suíte completa com PostgreSQL: **488 passam, 0 pulados**.
+
+## [Não lançado] — 2026-11-21 — P-07: SSRF em foto_url via redirect e DNS
+
+### Corrigido
+
+- `laudo_pdf._carregar_imagem_url` usava `httpx.get(follow_redirects=True)` e validava só a URL inicial. Um
+  redirect para `10.x`, `127.0.0.1` ou `169.254.169.254` era seguido. Um hostname público que resolvia para
+  rede privada também passava, porque a validação era só literal.
+- Novo `baixar_foto_segura` em `app/utils/url_seguras.py`: redirects manuais (máximo 3), validação em cada
+  salto, todos os endereços DNS precisam ser públicos, conexão ao IP validado (fecha DNS rebinding),
+  porta 443 e sem proxy do ambiente (`trust_env=False`).
+- `_carregar_imagem_url` passa a delegar para `baixar_foto_segura`. Falhas continuam devolvendo `None`.
+
+### Testes
+
+- `tests/test_foto_ssrf.py` — 43 testes: redirects legítimos (mesmo host e host público diferente), redirects
+  maliciosos, IP privado e IPv4 mapeado, DNS misto, rebinding, falha de DNS, URL inválida, conteúdo não
+  imagem, limite de tamanho e classificação de IP.
+- Teste de mutação: classificar todo IP como público fez 13 falharem; revalidar só a URL original fez 10
+  falharem. Ambas as mutações foram revertidas.
+- Suíte completa com PostgreSQL: **484 passam, 0 pulados**.
+
+### Limitações
+
+- Porta diferente de 443 agora é recusada. Nenhum uso conhecido depende disso.
+
 ## [Não lançado] — 2026-11-19 — correlação: unidades no motor pedido × NF-e
 
 ### Corrigido

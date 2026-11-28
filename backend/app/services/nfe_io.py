@@ -222,5 +222,9 @@ def buscar_xml_ou_json_por_chave(chave_acesso: str) -> dict[str, Any] | None:
     if r.status_code >= 400:
         return None
 
-    raw = r.json()
+    try:
+        raw = r.json()
+    except ValueError:
+        # Corpo 200 que não é JSON (manutenção, proxy, HTML de erro): indisponível, não exceção.
+        return None
     return _adaptar_resposta_nfe_io(raw)

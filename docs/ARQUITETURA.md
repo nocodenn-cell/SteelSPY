@@ -1,7 +1,7 @@
 # Arquitetura — Conferência NF × Especificação (Aço / Concreto)
 
 Documento de referência para o MVP (piloto pago) e evolução controlada.  
-**Objetivo:** comparar itens da NF (fonte estruturada) com a especificação da obra, normalizar unidades, aplicar sinônimos e entregar decisão **VERDE / AMARELO / VERMELHO** com rastro auditável.
+**Objetivo:** comparar itens da NF (fonte estruturada) com a especificação da obra, normalizar unidades, aplicar a matriz de decisão e entregar decisão **VERDE / AMARELO / VERMELHO** com rastro auditável.
 
 ---
 
@@ -47,7 +47,7 @@ flowchart LR
 
 | Contêiner | Responsabilidade | Stack sugerida (MVP) |
 |-----------|------------------|----------------------|
-| **PWA** | Fiscal digita chave, anexa foto; opcional admin confirma sinônimos | HTML/CSS/JS mínimo ou Next.js |
+| **PWA** | Fiscal digita chave, anexa foto | HTML/CSS/JS mínimo ou Next.js |
 | **API** | Orquestra conferência, idempotência, gera PDF, dispara alertas | Python **FastAPI** ou Node |
 | **Worker / Cron** | Retentativa XML indisponível, relatório semanal CSV | Mesmo runtime + scheduler (Render cron, GitHub Actions, ou worker queue) |
 | **Banco** | Obras, especificações, logs, dicionário, fila | **Supabase** (Postgres + RLS) |
@@ -106,7 +106,6 @@ flowchart TB
     P[Parser itens NF]
     M[Motor matching]
     M --> NORM[Normalização unidade]
-    M --> DIC[Dicionário sinônimos]
     M --> REGRA[Matriz decisão]
     PDF[Gerador PDF]
     WA[Adapter WhatsApp]
@@ -168,15 +167,6 @@ erDiagram
     numeric kg_por_metro
     numeric metros_por_barra
   }
-  DICIONARIO_IA {
-    uuid id PK
-    text termo_nfe UK
-    text material_padrao
-    numeric bitola_padrao
-    text marca_padrao
-    numeric confiabilidade
-    boolean confirmado
-  }
   NFE_LOGS {
     uuid id PK
     uuid obra_id FK
@@ -197,7 +187,7 @@ erDiagram
   }
 ```
 
-**Seed obrigatório:** tabela `CONVERSAO_MATERIAIS` (pesos ABNT por bitola) + sinônimos iniciais (“ACO CA50”, “VERGALHAO”, marcas).
+**Seed obrigatório:** tabela `CONVERSAO_MATERIAIS` (pesos ABNT por bitola) .
 
 **Conclusão de dados:** o **dicionário** e a **conversão** são ativos do negócio — versionados e auditáveis; sem eles não escala para múltiplas obras.
 
@@ -268,7 +258,7 @@ erDiagram
 
 1. **Produto:** um **auditor de entrada** especializado em **aço/concreto**, não um ERP.
 2. **Arquitetura:** monólito modular (API + jobs) + Postgres + storage + 3 integrações; **sem** microserviços no piloto.
-3. **Diferencial técnico defensável:** **normalização + sinônimos com confirmação + idempotência + PDF** — não só “IA leu a nota”.
+3. **Diferencial técnico defensável:** **normalização + matriz de decisão + idempotência + PDF** — não só “IA leu a nota”.
 4. **Maior risco:** **falso positivo** → mitigado por thresholds, ordem de severidade, e fila para XML.
 5. **Próximo passo de implementação:** implementar na ordem **Dados (Supabase + seed) → NFe.io → comparador → WhatsApp → PDF → PWA → relatório**.
 

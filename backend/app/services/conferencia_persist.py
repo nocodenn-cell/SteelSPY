@@ -97,7 +97,7 @@ def gravar_conferencia_com_xml(
                 :tenant, :chave, :obra, :status, CAST(:xml AS jsonb), :foto,
                 :resumo_g, CAST(:itens_res AS jsonb), :tipo, :nf_orig
             )
-            ON CONFLICT (obra_id, chave_acesso) DO UPDATE SET
+            ON CONFLICT (obra_id, chave_acesso, tipo) DO UPDATE SET
                 status_conferencia = EXCLUDED.status_conferencia,
                 xml_data = EXCLUDED.xml_data,
                 processado_em = NOW(),
@@ -142,15 +142,16 @@ def aplicar_xml_disponivel_fila(
     obra_id: UUID,
     chave_acesso: str,
     xml_data: dict[str, Any],
+    tipo: str = "entrada",
 ) -> None:
-    """Callback do worker: completa conferência para linha PENDENTE existente."""
+    """Callback do worker: completa a conferência (chave + tipo) que está na fila."""
     row = db.execute(
         text("""
             SELECT foto_url, tipo, nf_original_id
             FROM nfe_logs
-            WHERE obra_id = :obra AND chave_acesso = :chave
+            WHERE obra_id = :obra AND chave_acesso = :chave AND tipo = :tipo
         """),
-        {"obra": str(obra_id), "chave": chave_acesso},
+        {"obra": str(obra_id), "chave": chave_acesso, "tipo": tipo},
     ).mappings().first()
     if row is None:
         logger.warning("Fila sem nfe_logs correspondente obra=%s chave=%s", obra_id, chave_acesso)

@@ -79,7 +79,7 @@ def test_multi_itens_material_nao_solicitado():
     )
     assert r["status"] == StatusConferencia.VERMELHO.value
     assert r["alerta"] == TipoAlerta.MATERIAL_NAO_SOLICITADO.value
-    assert any("não solicitado" in d.get("conclusão", "").lower() for d in r["detalhes"])
+    assert any("não solicitado" in d.get("conclusao", "").lower() for d in r["detalhes"])
     assert r["resumo"]["total"] == 2
     assert r["resumo"]["vermelhos"] >= 1
     assert len(r["itens_processados"]) == 2

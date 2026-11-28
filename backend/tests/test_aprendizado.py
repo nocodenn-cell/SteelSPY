@@ -170,3 +170,12 @@ def test_override_permitido_quando_ha_divergencia_tecnica_mesmo_rebaixada() -> N
         [_item(61.7)], [ESPEC], ConfigObraConferente(modo_aprendizado=True)
     )
     assert conforme["can_override"] is False
+
+
+def test_padrao_do_modo_aprendizado_e_desligado_como_no_banco():
+    """P-11: obra nova nasce bloqueando. O padrão do código segue a migração 20261103150300."""
+    from app.domain.conferente import ConfigObraConferente, _config_conferente
+
+    assert ConfigObraConferente().modo_aprendizado is False
+    assert _config_conferente({}).modo_aprendizado is False
+    assert _config_conferente({"modo_aprendizado": True}).modo_aprendizado is True

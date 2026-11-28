@@ -102,10 +102,23 @@ def test_app_inicializa(client: TestClient) -> None:
 # --------------------------------------------------------------------------
 
 
-def test_health_responde_200(client: TestClient) -> None:
+def test_health_responde_200_com_banco_disponivel(client: TestClient, monkeypatch: Any) -> None:
+    import app.main as principal
+
+    monkeypatch.setattr(principal, "banco_responde", lambda: True, raising=False)
     resposta = client.get("/health")
     assert resposta.status_code == 200
-    assert resposta.json() == {"status": "ok"}
+    assert resposta.json()["status"] == "ok"
+
+
+def test_health_responde_503_quando_o_banco_nao_responde(client: TestClient, monkeypatch: Any) -> None:
+    """Load balancer precisa tirar a instância de rotação quando o Postgres cai."""
+    import app.main as principal
+
+    monkeypatch.setattr(principal, "banco_responde", lambda: False, raising=False)
+    resposta = client.get("/health")
+    assert resposta.status_code == 503
+    assert resposta.json()["banco"] == "indisponivel"
 
 
 def test_conferir_rejeita_payload_invalido_sem_tocar_no_banco(client: TestClient) -> None:
@@ -270,3 +283,17 @@ def test_geracao_de_pdf_continua_funcionando() -> None:
     assert pdf.startswith(b"%PDF")
     # Marcador obrigatório do documento gerado.
     assert re.search(rb"RELAT", pdf) or len(pdf) > 1000
+
+
+def test_banco_responde_e_falso_com_servidor_inexistente(monkeypatch: Any) -> None:
+    """O ping real: sem servidor na porta, devolve False em vez de estourar exceção."""
+    from sqlalchemy import create_engine
+
+    import app.db as banco
+
+    monkeypatch.setattr(
+        banco,
+        "engine",
+        create_engine("postgresql+psycopg2://u:p@127.0.0.1:1/x", connect_args={"connect_timeout": 2}),
+    )
+    assert banco.banco_responde() is False

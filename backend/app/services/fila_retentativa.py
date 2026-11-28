@@ -31,6 +31,7 @@ def enfileirar_apos_falha_xml(
     chave_acesso: str,
     ultimo_erro: str | None = None,
     tenant_id: UUID | None = None,
+    tipo: str = "entrada",
 ) -> dict[str, Any]:
     chave = chave_acesso[:44]
     proxima = agora_utc() + timedelta(minutes=DELAYS_MINUTOS[0])
@@ -39,13 +40,13 @@ def enfileirar_apos_falha_xml(
     # do tenant correto.
     sql = text("""
         INSERT INTO fila_nfe (
-            tenant_id, obra_id, chave_acesso, tentativas, proxima_tentativa, status, ultimo_erro
+            tenant_id, obra_id, chave_acesso, tipo, tentativas, proxima_tentativa, status, ultimo_erro
         )
         VALUES (
             COALESCE(CAST(:tenant AS uuid), (SELECT o.tenant_id FROM obras o WHERE o.id = CAST(:obra_id AS uuid))),
-            :obra_id, :chave, 0, :proxima, 'pendente', :erro
+            :obra_id, :chave, :tipo, 0, :proxima, 'pendente', :erro
         )
-        ON CONFLICT (obra_id, chave_acesso) DO UPDATE SET
+        ON CONFLICT (obra_id, chave_acesso, tipo) DO UPDATE SET
             ultimo_erro = EXCLUDED.ultimo_erro,
             proxima_tentativa = EXCLUDED.proxima_tentativa,
             tentativas = 0,
@@ -60,6 +61,7 @@ def enfileirar_apos_falha_xml(
             "tenant": str(tenant_id) if tenant_id else None,
             "obra_id": str(obra_id),
             "chave": chave,
+            "tipo": tipo,
             "proxima": proxima,
             "erro": ultimo_erro,
         },
@@ -88,7 +90,7 @@ def _reivindicar_lote_fila(db: Session, limite: int = 50) -> list[Any]:
     """
     rows = db.execute(
         text("""
-            SELECT id, tenant_id, obra_id, chave_acesso, tentativas, notificado_aguardando
+            SELECT id, tenant_id, obra_id, chave_acesso, tipo, tentativas, notificado_aguardando
             FROM fila_reivindicar_lote(:limite)
         """),
         {"limite": limite},
@@ -97,20 +99,42 @@ def _reivindicar_lote_fila(db: Session, limite: int = 50) -> list[Any]:
     return list(rows)
 
 
+PRAZO_CLAIM_MINUTOS = 10
+
+
+def _reaper_travadas(db: Session) -> None:
+    """
+    Devolve à fila linhas que um worker morto deixou em 'processando'.
+    Falha aqui não pode impedir o tick de processar o lote atual.
+    """
+    try:
+        liberadas = db.execute(
+            text("SELECT fila_reaper_travadas(:m)"), {"m": PRAZO_CLAIM_MINUTOS}
+        ).scalar()
+        db.commit()
+        if liberadas:
+            logger.warning("Reaper liberou %s linha(s) de fila travadas em processando", liberadas)
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Falha no reaper da fila: %s", e)
+        db.rollback()
+
+
 def processar_tick_fila(
     db: Session,
     *,
     buscar_xml: Callable[[str], dict[str, Any] | None],
-    ao_sucesso: Callable[[Session, UUID, str, dict[str, Any]], None] | None = None,
+    ao_sucesso: Callable[[Session, UUID, str, dict[str, Any], str], None] | None = None,
     notificar_aguardando: Callable[[str, str], None] | None = None,
 ) -> list[dict[str, Any]]:
     resultados: list[dict[str, Any]] = []
+    _reaper_travadas(db)
     claimed = _reivindicar_lote_fila(db)
 
     for row in claimed:
         fid = UUID(str(row["id"]))
         obra_id = UUID(str(row["obra_id"]))
         chave = str(row["chave_acesso"])
+        tipo = str(row["tipo"] or "entrada")
         tentativas = int(row["tentativas"])
         notificado = bool(row["notificado_aguardando"])
 
@@ -125,11 +149,21 @@ def processar_tick_fila(
                 logger.warning("Falha ao notificar aguardando: %s", e)
             marcar_notificado_aguardando(db, fid)
 
-        xml_data = buscar_xml(chave)
+        # `buscar_xml` pode levantar (JSON inválido, erro de rede inesperado...).
+        # Fora de um try, a exceção abortava o lote e deixava a linha em
+        # 'processando' sem que nada a recuperasse. Agora vira tentativa frustrada.
+        erro_busca: str | None = None
+        try:
+            xml_data = buscar_xml(chave)
+        except Exception as e:  # noqa: BLE001
+            logger.exception("Falha ao buscar XML (fila id=%s): %s", fid, e)
+            xml_data = None
+            erro_busca = f"erro ao buscar XML: {e!s}"[:2000]
+
         if xml_data is not None:
             try:
                 if ao_sucesso:
-                    ao_sucesso(db, obra_id, chave, xml_data)
+                    ao_sucesso(db, obra_id, chave, xml_data, tipo)
                 db.execute(
                     text("UPDATE fila_nfe SET status = 'processado', updated_at = NOW() WHERE id = :id"),
                     {"id": str(fid)},
@@ -181,11 +215,16 @@ def processar_tick_fila(
                 SET status = 'pendente',
                     tentativas = :t,
                     proxima_tentativa = :proxima,
-                    ultimo_erro = 'XML indisponível na API',
+                    ultimo_erro = :erro,
                     updated_at = NOW()
                 WHERE id = :id
             """),
-            {"id": str(fid), "t": nova_tentativa, "proxima": proxima},
+            {
+                "id": str(fid),
+                "t": nova_tentativa,
+                "proxima": proxima,
+                "erro": erro_busca or "XML indisponível na API",
+            },
         )
         db.commit()
         resultados.append(

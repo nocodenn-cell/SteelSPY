@@ -18,6 +18,11 @@ from fpdf import FPDF
 
 FONT_PATH = Path(__file__).resolve().parent.parent.parent / "assets" / "fonts" / "DejaVuSans.ttf"
 
+def _negrito(font: str) -> str:
+    """DejaVu tem um único TTF (regular). Negrito vira regular, sem fingir um estilo B."""
+    return "" if font == "DejaVu" else "B"
+
+
 # Larguras que somam a área útil do A4 com as margens do FPDF (210 - 2*15 = 180mm).
 _W_TOTAL = 180
 
@@ -93,15 +98,15 @@ def _faturados_sem_pedido_atual(conciliacoes: list[dict[str, Any]]) -> list[dict
 
 
 def _secao(pdf: FPDF, font: str, numero: str, titulo: str) -> None:
-    pdf.set_font(font, "B", 11)
+    pdf.set_font(font, _negrito(font), 11)
     pdf.set_x(pdf.l_margin)
-    pdf.cell(0, 7, f"{numero}. {titulo}", ln=1)
+    pdf.cell(0, 7, f"{numero}. {titulo}", new_x="LMARGIN", new_y="NEXT")
     pdf.set_font(font, "", 9)
 
 
 def _campo(pdf: FPDF, nome: str, valor: str) -> None:
     pdf.set_x(pdf.l_margin)
-    pdf.cell(58, 5, nome, ln=0)
+    pdf.cell(58, 5, nome, new_x="RIGHT", new_y="TOP")
     pdf.multi_cell(_W_TOTAL - 58, 5, str(valor or "—"))
     # fpdf2 deixa o cursor à direita da célula; sem isto a próxima linha nasce
     # fora da margem e o texto não cabe.
@@ -134,7 +139,6 @@ def gerar_dossie_pdf_bytes(dossie: dict[str, Any]) -> bytes:
 
     if FONT_PATH.is_file():
         pdf.add_font("DejaVu", "", str(FONT_PATH))
-        pdf.add_font("DejaVu", "B", str(FONT_PATH))
         font = "DejaVu"
     else:
         font = "helvetica"
@@ -144,7 +148,7 @@ def gerar_dossie_pdf_bytes(dossie: dict[str, Any]) -> bytes:
     obra = dossie.get("obra") or {}
     fornecedor = dossie.get("fornecedor") or {}
 
-    pdf.set_font(font, "B", 14)
+    pdf.set_font(font, _negrito(font), 14)
     _texto(pdf, 8, "DOSSIÊ DE RECEBIMENTO DE MATERIAL", alinhamento="C")
     pdf.set_font(font, "", 9)
     pdf.set_text_color(60, 60, 60)
@@ -165,14 +169,14 @@ def gerar_dossie_pdf_bytes(dossie: dict[str, Any]) -> bytes:
     _campo(pdf, "Identificador do dossiê", dossie.get("id"))
     _campo(pdf, "Gerado em", _fmt_data(dossie.get("gerado_em")))
     if obra.get("modo_aprendizado"):
-        pdf.set_font(font, "B", 9)
+        pdf.set_font(font, _negrito(font), 9)
         _texto(pdf, 5, "OBRA EM MODO APRENDIZADO — as especificações ainda estão sendo calibradas.")
         pdf.set_font(font, "", 9)
     pdf.ln(3)
 
     _secao(pdf, font, "2", "Linhas do pedido")
     col = (12, 58, 22, 20, 30, 38)
-    pdf.set_font(font, "B", 7)
+    pdf.set_font(font, _negrito(font), 7)
     for titulo, w in zip(("Linha", "Material", "Bitola", "Quantidade", "Código fornecedor", "Marca exigida"), col):
         pdf.cell(w, 7, titulo, border=1, align="C")
     pdf.ln()
@@ -192,9 +196,9 @@ def gerar_dossie_pdf_bytes(dossie: dict[str, Any]) -> bytes:
     if not notas:
         _texto(pdf, 5, "Nenhuma NF-e vinculada a este pedido.")
     for n in notas:
-        pdf.set_font(font, "B", 8)
+        pdf.set_font(font, _negrito(font), 8)
         pdf.set_x(pdf.l_margin)
-        pdf.cell(0, 5, _linha_nota(n), ln=1)
+        pdf.cell(0, 5, _linha_nota(n), new_x="LMARGIN", new_y="NEXT")
         pdf.set_font(font, "", 8)
         _texto(
             pdf,
@@ -239,9 +243,9 @@ def gerar_dossie_pdf_bytes(dossie: dict[str, Any]) -> bytes:
 
     transicoes = dossie.get("transicoes") or []
     if transicoes:
-        pdf.set_font(font, "B", 8)
+        pdf.set_font(font, _negrito(font), 8)
         pdf.set_x(pdf.l_margin)
-        pdf.cell(0, 6, "Trilha de transições (quem mudou o quê, e por quê):", ln=1)
+        pdf.cell(0, 6, "Trilha de transições (quem mudou o quê, e por quê):", new_x="LMARGIN", new_y="NEXT")
         pdf.set_font(font, "", 8)
         for t in transicoes[:60]:
             _texto(
@@ -255,9 +259,9 @@ def gerar_dossie_pdf_bytes(dossie: dict[str, Any]) -> bytes:
                 _texto(pdf, 4, f"     {t['motivo']}")
     evidencias = dossie.get("evidencias") or []
     if evidencias:
-        pdf.set_font(font, "B", 8)
+        pdf.set_font(font, _negrito(font), 8)
         pdf.set_x(pdf.l_margin)
-        pdf.cell(0, 6, "Prova fotográfica (os dois arquivos guardados, cada um com seu hash):", ln=1)
+        pdf.cell(0, 6, "Prova fotográfica (os dois arquivos guardados, cada um com seu hash):", new_x="LMARGIN", new_y="NEXT")
         pdf.set_font(font, "", 7)
         for e in evidencias[:60]:
             for linha in _linhas_evidencia(e):
@@ -270,9 +274,9 @@ def gerar_dossie_pdf_bytes(dossie: dict[str, Any]) -> bytes:
         _texto(pdf, 5, "Nenhuma conciliação registrada.")
     for c in conciliacoes:
         pdf.set_x(pdf.l_margin)
-        pdf.set_font(font, "B", 9)
+        pdf.set_font(font, _negrito(font), 9)
         pdf.set_text_color(*_cor_da_severidade(c.get("severidade_tecnica")))
-        pdf.cell(0, 6, f"{_fmt_data(c.get('criado_em'))} — severidade {c.get('severidade_tecnica')} · {c.get('status')}", ln=1)
+        pdf.cell(0, 6, f"{_fmt_data(c.get('criado_em'))} — severidade {c.get('severidade_tecnica')} · {c.get('status')}", new_x="LMARGIN", new_y="NEXT")
         pdf.set_text_color(0, 0, 0)
         pdf.set_font(font, "", 8)
         decisao = c.get("decisao") or {}
@@ -317,7 +321,7 @@ def gerar_dossie_pdf_bytes(dossie: dict[str, Any]) -> bytes:
     )
     pdf.set_text_color(0, 0, 0)
 
-    out = pdf.output(dest="S")
+    out = pdf.output()
     if isinstance(out, (bytes, bytearray)):
         return bytes(out)
     return str(out).encode("latin-1")

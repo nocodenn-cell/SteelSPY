@@ -37,3 +37,7 @@ python-multipart>=0.0.18,<0.1
 # ZoneInfoNotFoundError e a suite de testes nao coleta. Licenca Apache-2.0.
 # Sem teto: sao DADOS, nao API — convem atualizar.
 tzdata>=2024.1
+
+# Carrega backend/.env em desenvolvimento (app/db.py). Antes o .env era ignorado
+# em silêncio: o comando documentado subia sem ler a configuração.
+python-dotenv>=1.2.4,<2.0

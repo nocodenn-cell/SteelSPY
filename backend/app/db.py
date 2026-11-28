@@ -11,15 +11,18 @@ from __future__ import annotations
 
 import os
 
-from sqlalchemy import create_engine, event
+from dotenv import load_dotenv
+from sqlalchemy import create_engine, event, text
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session, sessionmaker
 
+from app.config_banco import resolver_database_url
 from app.tenant import CHAVE_TENANT, aplicar_contexto_na_conexao
 
-DATABASE_URL = os.getenv(
-    "DATABASE_URL",
-    "postgresql+psycopg2://postgres:postgres@localhost:5432/postgres",
-)
+# Carrega backend/.env quando existir. Não sobrescreve variáveis já definidas no ambiente.
+load_dotenv()
+
+DATABASE_URL = resolver_database_url(os.environ)
 
 engine = create_engine(DATABASE_URL, pool_pre_ping=True)
 SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False, class_=Session)
@@ -45,3 +48,13 @@ def get_db():
         yield db
     finally:
         db.close()
+
+
+def banco_responde() -> bool:
+    """Ping do banco para o /health: False em qualquer falha do SQLAlchemy (conexão, pool, timeout)."""
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+        return True
+    except SQLAlchemyError:
+        return False

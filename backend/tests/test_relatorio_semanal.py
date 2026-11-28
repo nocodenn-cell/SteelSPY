@@ -104,3 +104,36 @@ def test_enviar_email_inclui_bcc_no_envelope(mock_smtp_cls, monkeypatch):
     envelope = args[1]
     assert "a@test" in envelope
     assert "bcc@test" in envelope
+
+
+def test_csv_acrescenta_vermelhos_aceitos_sem_mudar_as_colunas_anteriores():
+    from app.services.relatorio_semanal import LinhaRelatorio as L
+
+    base = dict(
+        obra_id="00000000-0000-0000-0000-000000000001", obra_nome="Obra",
+        nfe_log_id="11111111-1111-1111-1111-111111111111", chave_acesso="3" * 44,
+        processado_em=datetime(2026, 4, 1, 15, 30, 0, tzinfo=timezone.utc),
+        status_conferencia="VERDE", tipo="entrada", emitente_nome="F", nfe_numero="1",
+        nfe_serie="1", resumo_global="OK", itens_total=2, itens_verdes=2,
+        itens_amarelos=0, itens_vermelhos=0,
+    )
+    linhas = [L(**base, itens_vermelhos_aceitos=1), L(**base)]
+    texto = montar_csv_bytes(linhas).decode("utf-8-sig").splitlines()
+    cabecalho = texto[0].split(";")
+    assert cabecalho[:15] == [
+        "obra_id", "obra_nome", "nfe_log_id", "chave_acesso", "processado_em_utc",
+        "status_conferencia", "tipo", "emitente_nome", "nfe_numero", "nfe_serie",
+        "resumo_global", "itens_total", "itens_verdes", "itens_amarelos", "itens_vermelhos",
+    ]
+    assert cabecalho[-1] == "itens_vermelhos_aceitos"
+    assert texto[1].split(";")[-1] == "1"
+    assert texto[2].split(";")[-1] == ""  # NF nunca aceita: campo vazio, não zero
+
+
+def test_vermelhos_aceitos_so_existe_quando_houve_override():
+    from app.services.relatorio_semanal import _vermelhos_aceitos
+
+    assert _vermelhos_aceitos({"total": 2, "vermelhos": 1}) is None
+    assert _vermelhos_aceitos({"total": 2, "vermelhos": 0, "vermelhos_aceitos": 1}) == 1
+    assert _vermelhos_aceitos(None) is None
+    assert _vermelhos_aceitos("texto") is None

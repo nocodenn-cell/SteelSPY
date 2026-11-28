@@ -6,17 +6,24 @@ from __future__ import annotations
 
 import json
 import logging
+import re
+import uuid
 from datetime import datetime, timezone
 from typing import Any, Literal
 from uuid import UUID
 
 from fastapi import APIRouter, BackgroundTasks, Cookie, Depends, Header, HTTPException, Request, Response
-from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, Field, field_validator, model_validator
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.auth_obra import verificar_acesso_obra
+from app.limite_tentativas import (
+    chave_conferir_obra,
+    conferir_janela_segundos,
+    conferir_max_por_obra,
+    limite,
+)
 from app.deps import autorizar_na_obra, exigir_csrf, sessao_atual, sessao_opcional
 from app.pwa_session import SESSION_COOKIE_NAME
 from app.db import get_db
@@ -31,7 +38,6 @@ from app.services.fila_retentativa import enfileirar_apos_falha_xml
 from app.services.conferencia_persist import carregar_obra_por_id, gravar_conferencia_com_xml
 from app.services.divergencias_pdf import gerar_divergencias_pdf_bytes, nome_arquivo_divergencias
 from app.services.laudo_pdf import gerar_laudo_pdf_bytes, montar_contexto_laudo, nome_arquivo_laudo
-from app.services.laudo_storage import SUPABASE_URL as LAUDO_SUPABASE_URL, enviar_laudo_pdf
 from app.services.mensagem_fiscal import gerar_mensagem_fiscal
 from app.services.nfe_io import buscar_xml_ou_json_por_chave
 from app.services.whatsapp_evolution import notificar_mensagem_fiscal, notificar_xml_pendente
@@ -41,7 +47,7 @@ from app.tenant import (
     consultar_obra,
     resolver_tenant_de_nfe_log,
 )
-from app.utils.url_seguras import URLNaoPermitidaError, url_redirect_laudo_confiavel, validar_url_imagem_publica
+from app.utils.url_seguras import URLNaoPermitidaError, validar_url_imagem_publica
 
 logger = logging.getLogger(__name__)
 
@@ -114,6 +120,7 @@ def _resposta_conferencia_idempotente(
     chave: str,
     status_db: str,
     xml_data: Any,
+    override_info: Any = None,
 ) -> dict[str, Any]:
     """Reconstrói o JSON da API a partir do snapshot em xml_data + status atual no banco (pós-override)."""
     xd = xml_data if isinstance(xml_data, dict) else {}
@@ -121,10 +128,16 @@ def _resposta_conferencia_idempotente(
     itens_proc = xd.get("itens_processados") or []
     msg_fiscal = gerar_mensagem_fiscal(status_db, resumo, itens_proc)
     can_override = status_db == StatusConferencia.VERMELHO.value
+    ov = override_info if isinstance(override_info, dict) else {}
+    # `status` é o efetivo (pode ser VERDE por aceite). `status_tecnico` é o que a
+    # regra concluiu, e `override` diz quem aceitou e quando, para a conciliação
+    # entre os dois não depender de adivinhação.
     return {
         "nfe_log_id": nfe_log_id,
         "chave_acesso": chave,
         "status": status_db,
+        "status_tecnico": xd.get("severidade_tecnica") or xd.get("status"),
+        "override": {"aplicado": bool(ov.get("historico")), "ultimo": ov.get("ultimo")} if ov else None,
         "alerta": xd.get("alerta", ""),
         "detalhes": xd.get("detalhes") or [],
         "motivos": xd.get("motivos") or [],
@@ -158,15 +171,29 @@ def _resposta_pendente_rica(
     }
 
 
+_CORRELACAO_RE = re.compile(r"[A-Za-z0-9._-]{8,64}")
+
+
+def _correlation_id(request: Request) -> str:
+    """Aceita o X-Correlation-ID do cliente quando é seguro; senão gera um novo."""
+    recebido = (request.headers.get("X-Correlation-ID") or "").strip()
+    if _CORRELACAO_RE.fullmatch(recebido):
+        return recebido
+    return uuid.uuid4().hex
+
+
 @router.post("/conferir")
 def post_conferir(
     request: Request,
+    response: Response,
     body: ConferirBody,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     x_api_key: str | None = Header(None, alias="X-API-KEY"),
     pwa_session_cookie: str | None = Cookie(None, alias=SESSION_COOKIE_NAME),
 ) -> dict[str, Any]:
+    cid = _correlation_id(request)
+    response.headers["X-Correlation-ID"] = cid
     try:
         chave = validar_chave(body.chave_acesso)
     except ChaveNFeInvalidaError as e:
@@ -211,11 +238,11 @@ def post_conferir(
 
     ex = db.execute(
         text("""
-            SELECT id, status_conferencia, xml_data
+            SELECT id, status_conferencia, xml_data, override_info
             FROM nfe_logs
-            WHERE obra_id = :obra AND chave_acesso = :chave
+            WHERE obra_id = :obra AND chave_acesso = :chave AND tipo = :tipo
         """),
-        {"obra": str(body.obra_id), "chave": chave},
+        {"obra": str(body.obra_id), "chave": chave, "tipo": body.tipo},
     ).mappings().first()
 
     config = ConfigObraConferente(
@@ -234,7 +261,34 @@ def post_conferir(
             chave=chave,
             status_db=ex["status_conferencia"],
             xml_data=ex["xml_data"],
+            override_info=ex["override_info"],
         )
+
+    # M4: teto de consultas pagas por obra. Conta só o que vai à NFe.io.
+    chave_obra = chave_conferir_obra(str(body.obra_id))
+    janela = conferir_janela_segundos()
+    bloqueado, restante = limite().bloqueado(
+        chave_obra, maximo=conferir_max_por_obra(), janela=janela
+    )
+    if bloqueado:
+        logger.warning(
+            "conferir correlation_id=%s obra=%s evento=limite_por_obra retry_after=%s",
+            cid,
+            str(body.obra_id)[:8],
+            restante,
+        )
+        raise HTTPException(
+            status_code=429,
+            detail="limite de consultas da obra atingido; tente novamente em instantes",
+            headers={"Retry-After": str(restante), "X-Correlation-ID": cid},
+        )
+    limite().registrar_falha(chave_obra, janela=janela)
+    logger.info(
+        "conferir correlation_id=%s obra=%s chave=...%s evento=consulta_nfeio",
+        cid,
+        str(body.obra_id)[:8],
+        chave[-4:],
+    )
 
     payload = buscar_xml_ou_json_por_chave(chave)
     if payload is None:
@@ -250,7 +304,7 @@ def post_conferir(
                     tenant_id, chave_acesso, obra_id, status_conferencia, xml_data, foto_url, tipo, nf_original_id
                 )
                 VALUES (:tenant, :chave, :obra, 'PENDENTE', NULL, :foto, :tipo, :nf_orig)
-                ON CONFLICT (obra_id, chave_acesso) DO UPDATE SET
+                ON CONFLICT (obra_id, chave_acesso, tipo) DO UPDATE SET
                     status_conferencia = 'PENDENTE',
                     processado_em = NOW(),
                     foto_url = COALESCE(EXCLUDED.foto_url, nfe_logs.foto_url),
@@ -274,6 +328,7 @@ def post_conferir(
             chave_acesso=chave,
             ultimo_erro="XML não encontrado na API (404 ou timeout)",
             tenant_id=obra["tenant_id"],
+            tipo=body.tipo,
         )
         background_tasks.add_task(_notificar_aguardando, str(body.obra_id), chave, whatsapp_destino_obra)
         return _resposta_pendente_rica(
@@ -317,7 +372,7 @@ def post_conferir(
     }
 
 
-# Devolve Response (bytes do PDF) ou RedirectResponse (302), nunca um modelo
+# Devolve Response (bytes do PDF), nunca um modelo
 # Pydantic. A anotacao de retorno e uma uniao de subclasses de Response e, a
 # partir do FastAPI 0.162, isso exige response_model=None no decorador — sem
 # ele o import do router falha com FastAPIError e a API nao sobe.
@@ -328,12 +383,12 @@ def get_laudo_pdf(
     db: Session = Depends(get_db),
     x_api_key: str | None = Header(None, alias="X-API-KEY"),
     pwa_session_cookie: str | None = Cookie(None, alias=SESSION_COOKIE_NAME),
-) -> Response | RedirectResponse:
+) -> Response:
     """
     Laudo de Conformidade Técnica (PDF).
-    Se `laudo_pdf_url` estiver preenchido (cache no Supabase Storage), redireciona (302).
-    Caso contrário gera o PDF, tenta enviar ao Storage e grava a URL; se o upload falhar,
-    devolve o arquivo inline.
+    O PDF é gerado e entregue pela própria API, depois da autorização. Não há
+    redirecionamento para storage: o laudo contém dados da obra e do fornecedor,
+    e uma URL pública e previsível contornaria a autorização.
     """
     sessao = sessao_opcional(request, db)
 
@@ -376,11 +431,6 @@ def get_laudo_pdf(
             detail="Laudo disponível após conclusão da conferência (status diferente de PENDENTE com xml_data).",
         )
 
-    cached = row.get("laudo_pdf_url")
-    cand = str(cached).strip() if cached else ""
-    if cand.startswith("https://") and url_redirect_laudo_confiavel(cand, LAUDO_SUPABASE_URL or ""):
-        return RedirectResponse(url=cand, status_code=302)
-
     nfe_log = {
         "id": row["id"],
         "chave_acesso": row["chave_acesso"],
@@ -398,19 +448,6 @@ def get_laudo_pdf(
     ctx = montar_contexto_laudo(nfe_log=nfe_log, obra=obra)
     pdf_bytes = gerar_laudo_pdf_bytes(ctx)
     fname = nome_arquivo_laudo(ctx)
-
-    public_url = enviar_laudo_pdf(nfe_log_id, pdf_bytes)
-    if public_url:
-        db.execute(
-            text("""
-                UPDATE nfe_logs
-                SET laudo_pdf_url = :url, laudo_pdf_gerado_em = NOW()
-                WHERE id = :id
-            """),
-            {"url": public_url, "id": str(nfe_log_id)},
-        )
-        db.commit()
-        return RedirectResponse(url=public_url, status_code=302)
 
     return Response(
         content=pdf_bytes,
@@ -575,16 +612,43 @@ def post_override(
     historico.append(entrada)
     novo_override = {**anterior, "historico": historico, "ultimo": entrada}
 
+    # Propaga o aceite para tudo que mostra status, sem apagar o fato técnico:
+    #   * itens VERMELHO recebem override_aplicado (status_item continua VERMELHO);
+    #   * itens_resumo passa a bater com o status VERDE, guardando a contagem
+    #     anterior em vermelhos_aceitos.
     db.execute(
         text("""
             UPDATE nfe_logs
             SET status_conferencia = 'VERDE',
                 override_info = CAST(:info AS jsonb),
+                itens_resumo = CASE
+                    WHEN itens_resumo IS NULL THEN NULL
+                    ELSE jsonb_set(
+                        jsonb_set(
+                            jsonb_set(
+                                itens_resumo, '{vermelhos_aceitos}',
+                                to_jsonb(COALESCE((itens_resumo->>'vermelhos')::int, 0))
+                            ),
+                            '{verdes}',
+                            to_jsonb(COALESCE((itens_resumo->>'verdes')::int, 0)
+                                     + COALESCE((itens_resumo->>'vermelhos')::int, 0))
+                        ),
+                        '{vermelhos}', '0'
+                    )
+                END,
                 laudo_pdf_url = NULL,
                 laudo_pdf_gerado_em = NULL
             WHERE id = :id
         """),
         {"id": str(nfe_log_id), "info": json.dumps(novo_override)},
+    )
+    db.execute(
+        text("""
+            UPDATE nfe_itens
+            SET override_aplicado = TRUE
+            WHERE nfe_log_id = :id AND status_item = 'VERMELHO'
+        """),
+        {"id": str(nfe_log_id)},
     )
     db.commit()
 
